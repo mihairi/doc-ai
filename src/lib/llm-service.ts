@@ -163,33 +163,67 @@ export async function streamChat({
         signal,
       });
       if (!res.ok) throw new Error(`LM Studio error: ${res.status}`);
-      const reader = res.body!.getReader();
+      if (!res.body) throw new Error('LM Studio stream indisponibil');
+
+      const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = '';
+
+      const processLine = (rawLine: string) => {
+        let line = rawLine;
+        if (line.endsWith('\r')) line = line.slice(0, -1);
+        if (!line.trim()) return false;
+        if (!line.startsWith('data:')) return false;
+
+        const json = line.slice(5).trim();
+        if (!json) return false;
+        if (json === '[DONE]') {
+          onDone();
+          return true;
+        }
+
+        try {
+          const parsed = JSON.parse(json);
+          const deltaContent = parsed.choices?.[0]?.delta?.content;
+          const messageContent = parsed.choices?.[0]?.message?.content;
+          const content = deltaContent || messageContent;
+          if (content) onDelta(content);
+        } catch {
+          // ignore malformed/incomplete SSE chunks
+        }
+        return false;
+      };
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+
         buf += decoder.decode(value, { stream: true });
         let idx: number;
         while ((idx = buf.indexOf('\n')) !== -1) {
-          let line = buf.slice(0, idx);
+          const line = buf.slice(0, idx);
           buf = buf.slice(idx + 1);
-          if (line.endsWith('\r')) line = line.slice(0, -1);
-          if (!line.startsWith('data: ')) continue;
-          const json = line.slice(6).trim();
-          if (json === '[DONE]') { onDone(); return; }
-          try {
-            const parsed = JSON.parse(json);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) onDelta(content);
-          } catch {}
+          const shouldStop = processLine(line);
+          if (shouldStop) return;
         }
+      }
+
+      // final flush (in case stream ends without trailing newline)
+      if (buf.trim()) {
+        processLine(buf);
       }
       onDone();
     }
   } catch (e: any) {
     if (e.name === 'AbortError') return;
-    onError(e.message || 'Connection failed');
+
+    const rawMessage = e?.message || 'Connection failed';
+    if (rawMessage.toLowerCase().includes('failed to fetch')) {
+      onError('Conexiunea către LLM a eșuat. Verificați host/port și că serverul LLM rulează.');
+      return;
+    }
+
+    onError(rawMessage);
   }
 }
 
