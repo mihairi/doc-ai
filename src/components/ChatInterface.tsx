@@ -74,18 +74,28 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
       });
     };
 
-    await streamChat({
-      config,
-      messages: history,
-      images: imageEntries.length > 0 ? imageEntries : undefined,
-      onDelta: upsert,
-      onDone: () => setIsStreaming(false),
-      onError: (err) => {
-        setIsStreaming(false);
-        toast({ title: 'Error', description: err, variant: 'destructive' });
-      },
-      signal: controller.signal,
-    });
+    try {
+      await streamChat({
+        config,
+        messages: history,
+        images: imageEntries.length > 0 ? imageEntries : undefined,
+        onDelta: upsert,
+        onDone: () => {
+          setIsStreaming(false);
+          if (!assistantSoFar.trim()) {
+            setMessages(prev => [...prev, { role: 'assistant', content: 'Această informație nu există în documentele furnizate.' }]);
+          }
+        },
+        onError: (err) => {
+          setIsStreaming(false);
+          toast({ title: 'Eroare conexiune LLM', description: err, variant: 'destructive' });
+        },
+        signal: controller.signal,
+      });
+    } catch (e) {
+      setIsStreaming(false);
+      toast({ title: 'Eroare', description: 'A apărut o eroare neașteptată la trimiterea mesajului.', variant: 'destructive' });
+    }
   };
 
   const handleStop = () => {
