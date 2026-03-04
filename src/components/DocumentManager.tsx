@@ -1,8 +1,9 @@
 import { useState, useRef } from 'react';
-import { FileText, Link, Upload, X, Globe, Loader2, FolderOpen } from 'lucide-react';
+import { FileText, Link, Upload, X, Globe, Loader2, FolderOpen, Image, FileType } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { DocEntry, addDocument, removeDocument } from '@/lib/document-store';
+import { DocEntry, DocType, addDocument, removeDocument } from '@/lib/document-store';
+import { extractPdfText } from '@/lib/pdf-utils';
 import { useToast } from '@/hooks/use-toast';
 
 interface DocumentManagerProps {
@@ -10,64 +11,125 @@ interface DocumentManagerProps {
   onDocumentsChange: () => void;
 }
 
+const TEXT_EXTENSIONS = new Set([
+  '.txt', '.md', '.html', '.htm', '.json', '.csv', '.xml', '.yaml', '.yml',
+  '.log', '.py', '.js', '.ts', '.tsx', '.jsx', '.css', '.sql', '.sh', '.env',
+  '.cfg', '.ini', '.toml', '.rst', '.rtf', '.tex', '.org', '.adoc', '.wiki',
+  '.bat', '.cmd', '.ps1', '.rb', '.php', '.java', '.c', '.cpp', '.h', '.hpp',
+  '.go', '.rs', '.swift', '.kt', '.scala', '.r', '.m', '.pl', '.lua',
+  '.dockerfile', '.makefile', '.gitignore', '.editorconfig', '.prettierrc',
+  '.eslintrc', '.babelrc', '.svelte', '.vue', '.sass', '.scss', '.less',
+]);
+
+const IMAGE_EXTENSIONS = new Set([
+  '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg',
+]);
+
+const PDF_EXTENSIONS = new Set(['.pdf']);
+
+function getFileType(filename: string): DocType | null {
+  const lower = filename.toLowerCase();
+  const ext = '.' + lower.split('.').pop();
+  
+  if (IMAGE_EXTENSIONS.has(ext)) return 'image';
+  if (PDF_EXTENSIONS.has(ext)) return 'pdf';
+  if (TEXT_EXTENSIONS.has(ext)) return 'text';
+  
+  // Common text filenames without extension
+  if (['dockerfile', 'makefile', 'readme', 'license', 'changelog', 'contributing'].some(n => lower.endsWith(n))) {
+    return 'text';
+  }
+  
+  return null;
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export function DocumentManager({ documents, onDocumentsChange }: DocumentManagerProps) {
   const [urlInput, setUrlInput] = useState('');
   const [loadingUrl, setLoadingUrl] = useState(false);
+  const [loadingFiles, setLoadingFiles] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  const TEXT_EXTENSIONS = new Set([
-    '.txt', '.md', '.html', '.htm', '.json', '.csv', '.xml', '.yaml', '.yml',
-    '.log', '.py', '.js', '.ts', '.tsx', '.jsx', '.css', '.sql', '.sh', '.env',
-    '.cfg', '.ini', '.toml', '.rst', '.rtf', '.tex', '.org', '.adoc', '.wiki',
-    '.bat', '.cmd', '.ps1', '.rb', '.php', '.java', '.c', '.cpp', '.h', '.hpp',
-    '.go', '.rs', '.swift', '.kt', '.scala', '.r', '.m', '.pl', '.lua',
-    '.dockerfile', '.makefile', '.gitignore', '.editorconfig', '.prettierrc',
-    '.eslintrc', '.babelrc', '.svelte', '.vue', '.sass', '.scss', '.less',
-  ]);
-
-  const isTextFile = (filename: string): boolean => {
-    const lower = filename.toLowerCase();
-    if (['dockerfile', 'makefile', 'readme', 'license', 'changelog', 'contributing'].some(n => lower.endsWith(n))) {
-      return true;
-    }
-    const ext = '.' + lower.split('.').pop();
-    return TEXT_EXTENSIONS.has(ext);
-  };
-
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (!files) return;
+    if (!files || files.length === 0) return;
 
+    setLoadingFiles(true);
     let added = 0;
     let skipped = 0;
+    let errors: string[] = [];
 
     for (const file of Array.from(files)) {
-      if (!isTextFile(file.name)) {
+      const fileType = getFileType(file.name);
+      
+      if (!fileType) {
         skipped++;
         continue;
       }
+
       try {
-        const text = await file.text();
-        if (!text.trim() || (text.match(/\0/g)?.length || 0) > 10) {
-          skipped++;
-          continue;
+        const name = file.webkitRelativePath || file.name;
+
+        if (fileType === 'image') {
+          // Check size - warn if > 2MB per image
+          if (file.size > 2 * 1024 * 1024) {
+            errors.push(`${file.name} (prea mare, max 2MB)`);
+            continue;
+          }
+          const base64 = await fileToBase64(file);
+          addDocument({ name, source: 'upload', type: 'image', content: base64 });
+          added++;
+        } else if (fileType === 'pdf') {
+          // Check size - warn if > 10MB
+          if (file.size > 10 * 1024 * 1024) {
+            errors.push(`${file.name} (prea mare, max 10MB)`);
+            continue;
+          }
+          const text = await extractPdfText(file);
+          if (!text.trim()) {
+            errors.push(`${file.name} (PDF fără text - posibil scanat)`);
+            continue;
+          }
+          addDocument({ name, source: 'upload', type: 'pdf', content: text });
+          added++;
+        } else {
+          const text = await file.text();
+          if (!text.trim() || (text.match(/\0/g)?.length || 0) > 10) {
+            skipped++;
+            continue;
+          }
+          addDocument({ name, source: 'upload', type: 'text', content: text });
+          added++;
         }
-        addDocument({ name: file.webkitRelativePath || file.name, source: 'upload', content: text });
-        added++;
-      } catch {
-        skipped++;
+      } catch (err) {
+        console.error(`Error processing ${file.name}:`, err);
+        errors.push(file.name);
       }
     }
 
     if (added > 0) {
-      toast({ title: `${added} document${added > 1 ? 'e' : ''} adăugat${added > 1 ? 'e' : ''}`, description: skipped > 0 ? `${skipped} fișier${skipped > 1 ? 'e' : ''} binare/incompatibile ignorate` : undefined });
-    } else if (skipped > 0) {
-      toast({ title: 'Niciun document text găsit', description: `${skipped} fișier${skipped > 1 ? 'e' : ''} ignorate (imagini, PDF etc.)`, variant: 'destructive' });
+      const desc = [
+        skipped > 0 ? `${skipped} ignorate` : '',
+        errors.length > 0 ? `${errors.length} erori` : '',
+      ].filter(Boolean).join(', ');
+      toast({ title: `${added} document${added > 1 ? 'e' : ''} adăugat${added > 1 ? 'e' : ''}`, description: desc || undefined });
+    } else {
+      const desc = errors.length > 0 ? errors.join(', ') : `${skipped} fișiere incompatibile`;
+      toast({ title: 'Niciun document adăugat', description: desc, variant: 'destructive' });
     }
 
     onDocumentsChange();
+    setLoadingFiles(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (folderInputRef.current) folderInputRef.current.value = '';
   };
@@ -96,7 +158,7 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
         .replace(/\s+/g, ' ')
         .trim();
       const parsedUrl = new URL(url);
-      addDocument({ name: parsedUrl.hostname + parsedUrl.pathname, source: 'url', content: cleanText });
+      addDocument({ name: parsedUrl.hostname + parsedUrl.pathname, source: 'url', type: 'text', content: cleanText });
       toast({ title: 'Conținut website încărcat', description: url });
       setUrlInput('');
     } catch {
@@ -115,6 +177,13 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
     onDocumentsChange();
   };
 
+  const getDocIcon = (doc: DocEntry) => {
+    if (doc.type === 'image') return <Image className="h-3.5 w-3.5 text-primary shrink-0" />;
+    if (doc.type === 'pdf') return <FileType className="h-3.5 w-3.5 text-primary shrink-0" />;
+    if (doc.source === 'url') return <Link className="h-3.5 w-3.5 text-primary shrink-0" />;
+    return <FileText className="h-3.5 w-3.5 text-primary shrink-0" />;
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -130,7 +199,7 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".txt,.md,.html,.htm,.json,.csv,.xml,.yaml,.yml,.log,.py,.js,.ts,.tsx,.jsx,.css,.sql,.sh,.env,.cfg,.ini,.toml,.rst,.rtf,.tex,.rb,.php,.java,.c,.cpp,.h,.go,.rs,.swift,.kt,.scala,.r,.pl,.lua,.vue,.svelte,.sass,.scss,.less"
+          accept=".txt,.md,.html,.htm,.json,.csv,.xml,.yaml,.yml,.log,.py,.js,.ts,.tsx,.jsx,.css,.sql,.sh,.env,.cfg,.ini,.toml,.pdf,.jpg,.jpeg,.png,.gif,.bmp,.webp,.svg,.rst,.rtf,.tex,.rb,.php,.java,.c,.cpp,.h,.go,.rs,.swift,.kt,.scala,.r,.pl,.lua,.vue,.svelte,.sass,.scss,.less"
           onChange={handleFileUpload}
           className="hidden"
         />
@@ -150,16 +219,18 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
             size="sm"
             className="flex-1 justify-start gap-2"
             onClick={() => fileInputRef.current?.click()}
+            disabled={loadingFiles}
           >
-            <Upload className="h-3.5 w-3.5" /> Fișiere
+            {loadingFiles ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} Fișiere
           </Button>
           <Button
             variant="secondary"
             size="sm"
             className="flex-1 justify-start gap-2"
             onClick={() => folderInputRef.current?.click()}
+            disabled={loadingFiles}
           >
-            <FolderOpen className="h-3.5 w-3.5" /> Folder
+            {loadingFiles ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderOpen className="h-3.5 w-3.5" />} Folder
           </Button>
         </div>
       </div>
@@ -182,7 +253,7 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
       <div className="space-y-1 max-h-64 overflow-y-auto scrollbar-thin">
         {documents.length === 0 && (
           <p className="text-xs text-muted-foreground text-center py-4">
-            Niciun document încărcat. Încărcați fișiere sau adăugați un URL pentru a începe.
+            Niciun document încărcat. Acceptă: text, PDF, imagini.
           </p>
         )}
         {documents.map((doc) => (
@@ -191,11 +262,7 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
             className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 bg-muted/50 hover:bg-muted group transition-colors"
           >
             <div className="flex items-center gap-2 min-w-0">
-              {doc.source === 'upload' ? (
-                <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
-              ) : (
-                <Link className="h-3.5 w-3.5 text-primary shrink-0" />
-              )}
+              {getDocIcon(doc)}
               <span className="text-xs truncate text-secondary-foreground">{doc.name}</span>
             </div>
             <Button
