@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@layer base {
+  :root {
+    --background: 220 20% 7%;
+    --foreground: 210 20% 90%;
+
+    --card: 220 18% 10%;
+    --card-foreground: 210 20% 90%;
+
+    --popover: 220 18% 12%;
+    --popover-foreground: 210 20% 90%;
+
+    --primary: 160 60% 45%;
+    --primary-foreground: 220 20% 7%;
+
+    --secondary: 220 16% 16%;
+    --secondary-foreground: 210 20% 80%;
+
+    --muted: 220 14% 14%;
+    --muted-foreground: 215 12% 50%;
+
+    --accent: 160 50% 38%;
+    --accent-foreground: 210 20% 95%;
+
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 220 14% 18%;
+    --input: 220 14% 18%;
+    --ring: 160 60% 45%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 220 18% 9%;
+    --sidebar-foreground: 210 20% 80%;
+    --sidebar-primary: 160 60% 45%;
+    --sidebar-primary-foreground: 220 20% 7%;
+    --sidebar-accent: 220 16% 14%;
+    --sidebar-accent-foreground: 210 20% 80%;
+    --sidebar-border: 220 14% 16%;
+    --sidebar-ring: 160 60% 45%;
+
+    --doc-surface: 220 16% 12%;
+    --doc-highlight: 160 60% 45%;
+    --chat-user: 220 16% 16%;
+    --chat-assistant: 220 18% 10%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 3px;
+  }
+}
