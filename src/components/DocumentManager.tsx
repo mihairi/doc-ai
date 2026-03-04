@@ -17,45 +17,92 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
   const folderInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
+  const TEXT_EXTENSIONS = new Set([
+    '.txt', '.md', '.html', '.htm', '.json', '.csv', '.xml', '.yaml', '.yml',
+    '.log', '.py', '.js', '.ts', '.tsx', '.jsx', '.css', '.sql', '.sh', '.env',
+    '.cfg', '.ini', '.toml', '.rst', '.rtf', '.tex', '.org', '.adoc', '.wiki',
+    '.bat', '.cmd', '.ps1', '.rb', '.php', '.java', '.c', '.cpp', '.h', '.hpp',
+    '.go', '.rs', '.swift', '.kt', '.scala', '.r', '.m', '.pl', '.lua',
+    '.dockerfile', '.makefile', '.gitignore', '.editorconfig', '.prettierrc',
+    '.eslintrc', '.babelrc', '.svelte', '.vue', '.sass', '.scss', '.less',
+  ]);
+
+  const isTextFile = (filename: string): boolean => {
+    const lower = filename.toLowerCase();
+    if (['dockerfile', 'makefile', 'readme', 'license', 'changelog', 'contributing'].some(n => lower.endsWith(n))) {
+      return true;
+    }
+    const ext = '.' + lower.split('.').pop();
+    return TEXT_EXTENSIONS.has(ext);
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
+    let added = 0;
+    let skipped = 0;
+
     for (const file of Array.from(files)) {
+      if (!isTextFile(file.name)) {
+        skipped++;
+        continue;
+      }
       try {
         const text = await file.text();
-        addDocument({ name: file.name, source: 'upload', content: text });
-        toast({ title: 'Document adăugat', description: file.name });
+        if (!text.trim() || (text.match(/\0/g)?.length || 0) > 10) {
+          skipped++;
+          continue;
+        }
+        addDocument({ name: file.webkitRelativePath || file.name, source: 'upload', content: text });
+        added++;
       } catch {
-        toast({ title: 'Eroare', description: `Nu s-a putut citi ${file.name}`, variant: 'destructive' });
+        skipped++;
       }
     }
+
+    if (added > 0) {
+      toast({ title: `${added} document${added > 1 ? 'e' : ''} adăugat${added > 1 ? 'e' : ''}`, description: skipped > 0 ? `${skipped} fișier${skipped > 1 ? 'e' : ''} binare/incompatibile ignorate` : undefined });
+    } else if (skipped > 0) {
+      toast({ title: 'Niciun document text găsit', description: `${skipped} fișier${skipped > 1 ? 'e' : ''} ignorate (imagini, PDF etc.)`, variant: 'destructive' });
+    }
+
     onDocumentsChange();
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (folderInputRef.current) folderInputRef.current.value = '';
   };
 
   const handleUrlFetch = async () => {
-    if (!urlInput.trim()) return;
+    const url = urlInput.trim();
+    if (!url) return;
+
+    if (url.startsWith('file://') || url.startsWith('/') || url.startsWith('C:\\') || url.startsWith('D:\\')) {
+      toast({
+        title: 'Fișier local detectat',
+        description: 'Nu se pot accesa fișiere locale prin URL. Folosiți butonul "Fișiere" sau "Folder" pentru încărcare.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setLoadingUrl(true);
     try {
-      // Use a CORS proxy or direct fetch
-      const res = await fetch(urlInput);
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
-      // Strip HTML tags for plain text extraction
       const cleanText = text.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
         .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
         .replace(/<[^>]+>/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
-      const url = new URL(urlInput);
-      addDocument({ name: url.hostname + url.pathname, source: 'url', content: cleanText });
-      toast({ title: 'Conținut website încărcat', description: urlInput });
+      const parsedUrl = new URL(url);
+      addDocument({ name: parsedUrl.hostname + parsedUrl.pathname, source: 'url', content: cleanText });
+      toast({ title: 'Conținut website încărcat', description: url });
       setUrlInput('');
-    } catch (e: any) {
+    } catch {
       toast({
         title: 'Nu s-a putut accesa URL-ul',
-        description: 'CORS poate bloca accesul direct. Încercați să descărcați pagina și să o încărcați manual.',
+        description: 'CORS blochează accesul direct. Salvați pagina (Ctrl+S) și încărcați-o cu butonul "Fișiere" sau "Folder".',
         variant: 'destructive',
       });
     }
@@ -83,7 +130,7 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".txt,.md,.html,.htm,.json,.csv,.xml,.yaml,.yml,.log,.py,.js,.ts,.tsx,.jsx,.css,.sql,.sh,.env,.cfg,.ini,.toml"
+          accept=".txt,.md,.html,.htm,.json,.csv,.xml,.yaml,.yml,.log,.py,.js,.ts,.tsx,.jsx,.css,.sql,.sh,.env,.cfg,.ini,.toml,.rst,.rtf,.tex,.rb,.php,.java,.c,.cpp,.h,.go,.rs,.swift,.kt,.scala,.r,.pl,.lua,.vue,.svelte,.sass,.scss,.less"
           onChange={handleFileUpload}
           className="hidden"
         />
