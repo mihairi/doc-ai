@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { LLMConfig, streamChat, ChatMessage } from '@/lib/llm-service';
-import { DocEntry, buildContextPrompt } from '@/lib/document-store';
+import { DocEntry, buildContextPrompt, getImageEntries } from '@/lib/document-store';
 import { useToast } from '@/hooks/use-toast';
 
 interface DisplayMessage {
@@ -52,6 +52,7 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
     setIsStreaming(true);
 
     const systemPrompt = buildContextPrompt(documents);
+    const imageEntries = getImageEntries(documents);
     const history: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
@@ -76,6 +77,7 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
     await streamChat({
       config,
       messages: history,
+      images: imageEntries.length > 0 ? imageEntries : undefined,
       onDelta: upsert,
       onDone: () => setIsStreaming(false),
       onError: (err) => {

@@ -9,7 +9,17 @@ export interface LLMConfig {
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | ChatContentPart[];
+}
+
+export type ChatContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
+export interface ImageData {
+  name: string;
+  base64: string;
+  mimeType: string;
 }
 
 const DEFAULT_CONFIGS: Record<LLMProvider, Omit<LLMConfig, 'model'>> = {
@@ -48,6 +58,7 @@ export async function fetchModels(config: LLMConfig): Promise<string[]> {
 export async function streamChat({
   config,
   messages,
+  images,
   onDelta,
   onDone,
   onError,
@@ -55,19 +66,38 @@ export async function streamChat({
 }: {
   config: LLMConfig;
   messages: ChatMessage[];
+  images?: ImageData[];
   onDelta: (text: string) => void;
   onDone: () => void;
   onError: (err: string) => void;
   signal?: AbortSignal;
 }) {
   const base = getBaseUrl(config);
+  const hasImages = images && images.length > 0;
 
   try {
     if (config.provider === 'ollama') {
+      // Ollama supports images via the 'images' field in messages
+      const ollamaMessages = messages.map(m => {
+        const msg: any = { role: m.role, content: typeof m.content === 'string' ? m.content : m.content.map(p => p.type === 'text' ? p.text : '').join('') };
+        return msg;
+      });
+
+      // Attach images to the last user message
+      if (hasImages && ollamaMessages.length > 0) {
+        let lastUserIdx = -1;
+        for (let i = ollamaMessages.length - 1; i >= 0; i--) {
+          if (ollamaMessages[i].role === 'user') { lastUserIdx = i; break; }
+        }
+        if (lastUserIdx !== -1) {
+          ollamaMessages[lastUserIdx].images = images.map(img => img.base64);
+        }
+      }
+
       const res = await fetch(`${base}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: config.model, messages, stream: true }),
+        body: JSON.stringify({ model: config.model, messages: ollamaMessages, stream: true }),
         signal,
       });
       if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
@@ -91,11 +121,45 @@ export async function streamChat({
       }
       onDone();
     } else {
-      // LM Studio uses OpenAI-compatible API
+      // LM Studio uses OpenAI-compatible API with vision support
+      const openaiMessages = messages.map(m => {
+        if (typeof m.content === 'string' && !hasImages) {
+          return { role: m.role, content: m.content };
+        }
+        // For messages with images, use content array format
+        if (m.role === 'user' && typeof m.content === 'string') {
+          return { role: m.role, content: m.content };
+        }
+        if (Array.isArray(m.content)) {
+          return { role: m.role, content: m.content };
+        }
+        return { role: m.role, content: m.content };
+      });
+
+      // Attach images to last user message using OpenAI vision format
+      if (hasImages && openaiMessages.length > 0) {
+        let lastUserIdx = -1;
+        for (let i = openaiMessages.length - 1; i >= 0; i--) {
+          if (openaiMessages[i].role === 'user') { lastUserIdx = i; break; }
+        }
+        if (lastUserIdx !== -1) {
+          const msg = openaiMessages[lastUserIdx];
+          const textContent = typeof msg.content === 'string' ? msg.content : '';
+          const contentParts: any[] = [{ type: 'text', text: textContent }];
+          for (const img of images) {
+            contentParts.push({
+              type: 'image_url',
+              image_url: { url: `data:${img.mimeType};base64,${img.base64}` }
+            });
+          }
+          openaiMessages[lastUserIdx] = { role: msg.role, content: contentParts };
+        }
+      }
+
       const res = await fetch(`${base}/v1/chat/completions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: config.model, messages, stream: true }),
+        body: JSON.stringify({ model: config.model, messages: openaiMessages, stream: true }),
         signal,
       });
       if (!res.ok) throw new Error(`LM Studio error: ${res.status}`);
