@@ -51,7 +51,7 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
     setInput('');
     setIsStreaming(true);
 
-    const systemPrompt = buildContextPrompt(documents);
+    const systemPrompt = buildContextPrompt(documents, text);
     const imageEntries = getImageEntries(documents);
     const history: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -83,7 +83,7 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
         onDone: () => {
           setIsStreaming(false);
           if (!assistantSoFar.trim()) {
-            setMessages(prev => [...prev, { role: 'assistant', content: 'Această informație nu există în documentele furnizate.' }]);
+            setMessages(prev => [...prev, { role: 'assistant', content: 'Nu am primit răspuns de la model. Verificați conexiunea la LLM și modelul selectat, apoi încercați din nou.' }]);
           }
         },
         onError: (err) => {
