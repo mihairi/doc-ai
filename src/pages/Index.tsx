@@ -1,10 +1,10 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Terminal, Lock, LogOut, KeyRound } from 'lucide-react';
 import { SettingsPanel } from '@/components/SettingsPanel';
 import { DocumentManager } from '@/components/DocumentManager';
 import { ChatInterface } from '@/components/ChatInterface';
 import { LLMConfig, loadConfig } from '@/lib/llm-service';
-import { DocEntry, loadDocuments } from '@/lib/document-store';
+import { DocEntry, loadDocuments, migrateFromLocalStorage } from '@/lib/document-store';
 import { isAdminAuthenticated, authenticateAdmin, logoutAdmin } from '@/lib/admin-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,14 +12,27 @@ import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
   const [config, setConfig] = useState<LLMConfig>(loadConfig);
-  const [documents, setDocuments] = useState<DocEntry[]>(loadDocuments);
+  const [documents, setDocuments] = useState<DocEntry[]>([]);
   const [isAdmin, setIsAdmin] = useState(isAdminAuthenticated);
   const [showLogin, setShowLogin] = useState(false);
   const [password, setPassword] = useState('');
   const { toast } = useToast();
 
-  const refreshDocs = useCallback(() => {
-    setDocuments(loadDocuments());
+  // Load docs from IndexedDB on mount (+ migrate from localStorage if needed)
+  useEffect(() => {
+    (async () => {
+      const migrated = await migrateFromLocalStorage();
+      if (migrated > 0) {
+        toast({ title: `${migrated} documente migrate din localStorage în IndexedDB` });
+      }
+      const docs = await loadDocuments();
+      setDocuments(docs);
+    })();
+  }, []);
+
+  const refreshDocs = useCallback(async () => {
+    const docs = await loadDocuments();
+    setDocuments(docs);
   }, []);
 
   const handleAdminLogin = () => {
