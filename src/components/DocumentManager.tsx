@@ -1,10 +1,16 @@
 import { useState, useRef } from 'react';
-import { FileText, Link, Upload, X, Globe, Loader2, FolderOpen, Image, FileType, RefreshCw, Trash2, Database } from 'lucide-react';
+import { FileText, Link, Upload, X, Globe, Loader2, FolderOpen, Image, FileType, RefreshCw, Trash2, Database, Server } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DocEntry, DocType, addDocument, addDocuments, removeDocument, clearAllDocuments, getDocumentCount } from '@/lib/document-store';
 import { extractPdfText } from '@/lib/pdf-utils';
 import { useToast } from '@/hooks/use-toast';
+import {
+  loadFileServerConfig,
+  scanRemoteFolders,
+  fetchRemoteFileContent,
+  checkFileServerHealth,
+} from '@/lib/file-server';
 
 interface DocumentManagerProps {
   documents: DocEntry[];
@@ -56,6 +62,7 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
   const [loadingUrl, setLoadingUrl] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [indexing, setIndexing] = useState(false);
+  const [loadingServer, setLoadingServer] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -196,6 +203,69 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
     setIndexing(false);
   };
 
+  const handleServerImport = async () => {
+    const fsConfig = loadFileServerConfig();
+    if (!fsConfig.enabled || !fsConfig.url) {
+      toast({ title: 'File server dezactivat', description: 'Activați File Server din Setări.', variant: 'destructive' });
+      return;
+    }
+
+    setLoadingServer(true);
+    try {
+      const healthy = await checkFileServerHealth(fsConfig.url);
+      if (!healthy) {
+        toast({ title: 'File server indisponibil', description: `Nu se poate conecta la ${fsConfig.url}`, variant: 'destructive' });
+        setLoadingServer(false);
+        return;
+      }
+
+      // Scan and get file list
+      const remoteFiles = await scanRemoteFolders(fsConfig.url);
+      if (remoteFiles.length === 0) {
+        toast({ title: 'Niciun fișier găsit', description: 'Folderele configurate sunt goale sau nu conțin fișiere suportate.', variant: 'destructive' });
+        setLoadingServer(false);
+        return;
+      }
+
+      // Fetch content for each file in batches
+      let added = 0;
+      let errors = 0;
+      const BATCH = 10;
+
+      for (let i = 0; i < remoteFiles.length; i += BATCH) {
+        const batch = remoteFiles.slice(i, i + BATCH);
+        const docsToAdd: Omit<DocEntry, 'id' | 'addedAt'>[] = [];
+
+        for (const rf of batch) {
+          try {
+            const fileData = await fetchRemoteFileContent(fsConfig.url, rf.path);
+            docsToAdd.push({
+              name: rf.name,
+              source: 'upload',
+              type: fileData.type as DocType,
+              content: fileData.content,
+            });
+          } catch {
+            errors++;
+          }
+        }
+
+        if (docsToAdd.length > 0) {
+          added += await addDocuments(docsToAdd);
+        }
+      }
+
+      toast({
+        title: `${added} document${added > 1 ? 'e' : ''} importat${added > 1 ? 'e' : ''} de pe server`,
+        description: errors > 0 ? `${errors} erori` : `Din ${remoteFiles.length} fișiere găsite`,
+      });
+      onDocumentsChange();
+    } catch (err: any) {
+      toast({ title: 'Eroare import server', description: err?.message || 'Eroare necunoscută', variant: 'destructive' });
+    }
+    setLoadingServer(false);
+  };
+
   const handleClearAll = async () => {
     if (!confirm('Sigur doriți să ștergeți TOATE documentele? Această acțiune nu poate fi anulată.')) return;
     await clearAllDocuments();
@@ -288,6 +358,17 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
             {loadingFiles ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderOpen className="h-3.5 w-3.5" />} Folder
           </Button>
         </div>
+        {/* Server import button */}
+        <Button
+          variant="secondary"
+          size="sm"
+          className="w-full justify-start gap-2"
+          onClick={handleServerImport}
+          disabled={loadingServer}
+        >
+          {loadingServer ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Server className="h-3.5 w-3.5" />}
+          Import din File Server
+        </Button>
       </div>
 
       {/* URL */}
