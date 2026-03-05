@@ -5,51 +5,145 @@ export interface DocEntry {
   name: string;
   source: 'upload' | 'url';
   type: DocType;
-  content: string; // text content or base64 data URL for images
+  content: string;
   addedAt: number;
 }
 
-const STORAGE_KEY = 'doc-entries';
+const DB_NAME = 'docbot-db';
+const DB_VERSION = 1;
+const STORE_NAME = 'documents';
 
-export function loadDocuments(): DocEntry[] {
+function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function loadDocuments(): Promise<DocEntry[]> {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return [];
-    const docs = JSON.parse(saved) as DocEntry[];
-    // Migrate old entries without type
-    return docs.map(d => ({ ...d, type: d.type || 'text' }));
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const docs = (req.result as DocEntry[]).map(d => ({ ...d, type: d.type || 'text' as DocType }));
+        docs.sort((a, b) => a.addedAt - b.addedAt);
+        resolve(docs);
+      };
+      req.onerror = () => reject(req.error);
+    });
   } catch {
     return [];
   }
 }
 
-export function saveDocuments(docs: DocEntry[]) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(docs));
-  } catch (e: any) {
-    if (e?.name === 'QuotaExceededError') {
-      throw new Error('STORAGE_FULL');
-    }
-    throw e;
-  }
-}
-
-export function addDocument(doc: Omit<DocEntry, 'id' | 'addedAt'>): DocEntry {
+export async function addDocument(doc: Omit<DocEntry, 'id' | 'addedAt'>): Promise<DocEntry> {
   const entry: DocEntry = {
     ...doc,
     id: crypto.randomUUID(),
     addedAt: Date.now(),
   };
-  const docs = loadDocuments();
-  docs.push(entry);
-  saveDocuments(docs);
-  return entry;
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.add(entry);
+    req.onsuccess = () => resolve(entry);
+    req.onerror = () => reject(req.error);
+  });
 }
 
-export function removeDocument(id: string) {
-  const docs = loadDocuments().filter(d => d.id !== id);
-  saveDocuments(docs);
+export async function addDocuments(docs: Omit<DocEntry, 'id' | 'addedAt'>[]): Promise<number> {
+  if (docs.length === 0) return 0;
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    let added = 0;
+    for (const doc of docs) {
+      const entry: DocEntry = { ...doc, id: crypto.randomUUID(), addedAt: Date.now() + added };
+      const req = store.add(entry);
+      req.onsuccess = () => { added++; };
+    }
+    tx.oncomplete = () => resolve(added);
+    tx.onerror = () => reject(tx.error);
+  });
 }
+
+export async function removeDocument(id: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function clearAllDocuments(): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.clear();
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function getDocumentCount(): Promise<number> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.count();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// --- Migration from localStorage ---
+const OLD_STORAGE_KEY = 'doc-entries';
+
+export async function migrateFromLocalStorage(): Promise<number> {
+  try {
+    const saved = localStorage.getItem(OLD_STORAGE_KEY);
+    if (!saved) return 0;
+    const oldDocs = JSON.parse(saved) as DocEntry[];
+    if (!oldDocs.length) return 0;
+    
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      let migrated = 0;
+      for (const doc of oldDocs) {
+        const entry = { ...doc, type: doc.type || 'text' as DocType };
+        const req = store.put(entry);
+        req.onsuccess = () => { migrated++; };
+      }
+      tx.oncomplete = () => {
+        localStorage.removeItem(OLD_STORAGE_KEY);
+        resolve(migrated);
+      };
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    return 0;
+  }
+}
+
+// --- Retrieval / context building (unchanged logic, sync on provided docs) ---
 
 function normalize(text: string): string[] {
   return text
@@ -124,7 +218,6 @@ export function getImageEntries(docs: DocEntry[]): { name: string; base64: strin
   return docs
     .filter(d => d.type === 'image')
     .map(d => {
-      // content is a data URL like "data:image/png;base64,..."
       const match = d.content.match(/^data:(image\/[^;]+);base64,(.+)$/);
       if (match) {
         return { name: d.name, mimeType: match[1], base64: match[2] };
