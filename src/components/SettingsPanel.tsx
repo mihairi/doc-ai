@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, RefreshCw, Check, Wifi, WifiOff, Server, FolderOpen } from 'lucide-react';
+import { Settings, RefreshCw, Check, Wifi, WifiOff, Server, FolderOpen, Database, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,11 +8,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { LLMConfig, LLMProvider, getDefaultConfig, fetchModels, loadConfig, saveConfig } from '@/lib/llm-service';
 import {
   FileServerConfig,
+  IndexStatus,
   loadFileServerConfig,
   saveFileServerConfig,
   checkFileServerHealth,
   fetchRemoteFolders,
+  fetchIndexStatus,
+  triggerIndexing,
+  RemoteFolder,
 } from '@/lib/file-server';
+import { useToast } from '@/hooks/use-toast';
 
 interface SettingsPanelProps {
   config: LLMConfig;
@@ -24,12 +29,16 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
   const [loading, setLoading] = useState(false);
   const [connected, setConnected] = useState(false);
   const [open, setOpen] = useState(false);
+  const { toast } = useToast();
 
   // File server state
   const [fsConfig, setFsConfig] = useState<FileServerConfig>(loadFileServerConfig);
   const [fsConnected, setFsConnected] = useState(false);
-  const [fsFolders, setFsFolders] = useState<{ path: string; exists: boolean }[]>([]);
+  const [fsEngine, setFsEngine] = useState<string | undefined>();
+  const [fsFolders, setFsFolders] = useState<RemoteFolder[]>([]);
   const [fsChecking, setFsChecking] = useState(false);
+  const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
+  const [indexing, setIndexing] = useState(false);
 
   const refreshModels = async () => {
     setLoading(true);
@@ -50,25 +59,32 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
     }
   }, [config.provider, config.host, config.port]);
 
-  // Check file server when enabled or URL changes
   const checkFileServer = async () => {
     if (!fsConfig.enabled || !fsConfig.url) {
       setFsConnected(false);
       setFsFolders([]);
+      setIndexStatus(null);
       return;
     }
     setFsChecking(true);
-    const healthy = await checkFileServerHealth(fsConfig.url);
-    setFsConnected(healthy);
-    if (healthy) {
+    const health = await checkFileServerHealth(fsConfig.url);
+    setFsConnected(health.ok);
+    setFsEngine(health.engine);
+    if (health.ok) {
       try {
-        const folders = await fetchRemoteFolders(fsConfig.url);
+        const [folders, status] = await Promise.all([
+          fetchRemoteFolders(fsConfig.url),
+          fetchIndexStatus(fsConfig.url),
+        ]);
         setFsFolders(folders);
+        setIndexStatus(status);
       } catch {
         setFsFolders([]);
+        setIndexStatus(null);
       }
     } else {
       setFsFolders([]);
+      setIndexStatus(null);
     }
     setFsChecking(false);
   };
@@ -78,6 +94,40 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
       checkFileServer();
     }
   }, [fsConfig.enabled, fsConfig.url]);
+
+  // Poll index status while indexing
+  useEffect(() => {
+    if (!indexing || !fsConfig.enabled) return;
+    const interval = setInterval(async () => {
+      try {
+        const status = await fetchIndexStatus(fsConfig.url);
+        setIndexStatus(status);
+        if (!status.indexing) {
+          setIndexing(false);
+          toast({
+            title: status.error ? 'Eroare la indexare' : 'Indexare completă',
+            description: status.error || `${status.doc_count} documente indexate.`,
+            variant: status.error ? 'destructive' : 'default',
+          });
+        }
+      } catch {}
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [indexing, fsConfig.url, fsConfig.enabled]);
+
+  const handleTriggerIndex = async () => {
+    try {
+      const result = await triggerIndexing(fsConfig.url);
+      if (result === 'already_indexing') {
+        toast({ title: 'Indexarea este deja în curs...' });
+      } else {
+        setIndexing(true);
+        toast({ title: 'Indexare pornită', description: 'Se procesează documentele...' });
+      }
+    } catch (err: any) {
+      toast({ title: 'Eroare', description: err?.message, variant: 'destructive' });
+    }
+  };
 
   const updateField = (field: keyof LLMConfig, value: string) => {
     const updated = { ...config, [field]: value };
@@ -178,12 +228,12 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
             </div>
           </div>
 
-          {/* File Server Config */}
+          {/* LlamaIndex Server Config */}
           <div className="border-t border-border pt-4 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-mono text-sm font-semibold text-foreground flex items-center gap-2">
                 <Server className="h-4 w-4" />
-                File Server
+                LlamaIndex Server
               </h3>
               <Switch
                 checked={fsConfig.enabled}
@@ -194,7 +244,7 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
             {fsConfig.enabled && (
               <>
                 <div>
-                  <Label className="text-xs text-muted-foreground">URL File Server</Label>
+                  <Label className="text-xs text-muted-foreground">URL Server</Label>
                   <div className="flex gap-2 mt-1">
                     <Input
                       value={fsConfig.url}
@@ -210,11 +260,51 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
 
                 <div className="flex items-center gap-1.5 text-xs">
                   {fsConnected ? (
-                    <><Wifi className="h-3.5 w-3.5 text-primary" /><span className="text-primary">File server conectat</span></>
+                    <>
+                      <Wifi className="h-3.5 w-3.5 text-primary" />
+                      <span className="text-primary">
+                        Conectat{fsEngine ? ` · ${fsEngine}` : ''}
+                      </span>
+                    </>
                   ) : (
-                    <><WifiOff className="h-3.5 w-3.5 text-destructive" /><span className="text-destructive">File server deconectat</span></>
+                    <><WifiOff className="h-3.5 w-3.5 text-destructive" /><span className="text-destructive">Deconectat</span></>
                   )}
                 </div>
+
+                {/* Index status & trigger */}
+                {fsConnected && (
+                  <div className="space-y-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full justify-start gap-2"
+                      onClick={handleTriggerIndex}
+                      disabled={indexing || (indexStatus?.indexing ?? false)}
+                    >
+                      {indexing || indexStatus?.indexing ? (
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Zap className="h-3.5 w-3.5" />
+                      )}
+                      {indexing || indexStatus?.indexing ? 'Se indexează...' : 'Re-indexare documente'}
+                    </Button>
+
+                    {indexStatus && (
+                      <div className="text-[10px] text-muted-foreground font-mono bg-muted/50 rounded p-2 space-y-0.5">
+                        <div className="flex items-center gap-1">
+                          <Database className="h-3 w-3" />
+                          <span>{indexStatus.doc_count} documente indexate</span>
+                        </div>
+                        {indexStatus.last_indexed && (
+                          <div>Ultima indexare: {indexStatus.last_indexed}</div>
+                        )}
+                        {indexStatus.error && (
+                          <div className="text-destructive">Eroare: {indexStatus.error}</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {fsFolders.length > 0 && (
                   <div className="space-y-1">
@@ -223,6 +313,7 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
                       <div key={i} className="flex items-center gap-2 text-xs font-mono bg-muted/50 rounded px-2 py-1">
                         <FolderOpen className={`h-3 w-3 ${f.exists ? 'text-primary' : 'text-destructive'}`} />
                         <span className="truncate text-secondary-foreground">{f.path}</span>
+                        {f.exists && <span className="text-muted-foreground text-[10px] ml-auto">{f.file_count}</span>}
                         {!f.exists && <span className="text-destructive text-[10px]">lipsă</span>}
                       </div>
                     ))}
@@ -231,7 +322,10 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
 
                 {!fsConnected && (
                   <div className="text-[10px] text-muted-foreground bg-muted/50 rounded p-2 space-y-1">
-                    <p className="font-semibold">Porniți file server-ul pe mașina cu Ollama:</p>
+                    <p className="font-semibold">Porniți serverul pe mașina cu Ollama:</p>
+                    <code className="block bg-muted rounded px-1.5 py-0.5 text-primary break-all">
+                      pip install llama-index llama-index-embeddings-huggingface flask flask-cors
+                    </code>
                     <code className="block bg-muted rounded px-1.5 py-0.5 text-primary break-all">
                       python docbot-fileserver.py --folders /cale/documente
                     </code>

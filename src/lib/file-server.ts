@@ -1,19 +1,36 @@
-// File server client for accessing folders on the Ollama/local server
+// LlamaIndex server client for document indexing and retrieval
 
 export interface FileServerConfig {
   enabled: boolean;
   url: string; // e.g. http://127.0.0.1:5123
 }
 
-export interface RemoteFileEntry {
-  name: string;
+export interface IndexStatus {
+  indexed: boolean;
+  doc_count: number;
+  last_indexed: string | null;
+  indexing: boolean;
+  error: string | null;
+  folders: string[];
+}
+
+export interface RetrievalResult {
+  text: string;
+  score: number;
+  metadata: Record<string, string>;
+}
+
+export interface RemoteFolder {
   path: string;
-  folder: string;
-  type: 'text' | 'image' | 'pdf';
-  size: number;
+  exists: boolean;
+  file_count: number;
 }
 
 const FS_CONFIG_KEY = 'docbot-fileserver-config';
+
+function baseUrl(url: string): string {
+  return url.replace(/\/+$/, '');
+}
 
 export function loadFileServerConfig(): FileServerConfig {
   try {
@@ -27,40 +44,48 @@ export function saveFileServerConfig(config: FileServerConfig) {
   localStorage.setItem(FS_CONFIG_KEY, JSON.stringify(config));
 }
 
-export async function checkFileServerHealth(url: string): Promise<boolean> {
+export async function checkFileServerHealth(url: string): Promise<{ ok: boolean; engine?: string }> {
   try {
-    const res = await fetch(`${url.replace(/\/+$/, '')}/api/health`, { signal: AbortSignal.timeout(3000) });
-    if (!res.ok) return false;
+    const res = await fetch(`${baseUrl(url)}/api/health`, { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) return { ok: false };
     const data = await res.json();
-    return data.status === 'ok';
+    return { ok: data.status === 'ok', engine: data.engine };
   } catch {
-    return false;
+    return { ok: false };
   }
 }
 
-export async function fetchRemoteFiles(url: string): Promise<RemoteFileEntry[]> {
-  const res = await fetch(`${url.replace(/\/+$/, '')}/api/files`);
-  if (!res.ok) throw new Error(`File server error: ${res.status}`);
-  const data = await res.json();
-  return data.files || [];
-}
-
-export async function scanRemoteFolders(url: string): Promise<RemoteFileEntry[]> {
-  const res = await fetch(`${url.replace(/\/+$/, '')}/api/scan`, { method: 'POST' });
-  if (!res.ok) throw new Error(`File server error: ${res.status}`);
-  const data = await res.json();
-  return data.files || [];
-}
-
-export async function fetchRemoteFileContent(url: string, filePath: string): Promise<{ type: string; content: string; name: string }> {
-  const res = await fetch(`${url.replace(/\/+$/, '')}/api/file?path=${encodeURIComponent(filePath)}`);
-  if (!res.ok) throw new Error(`File server error: ${res.status}`);
+export async function fetchIndexStatus(url: string): Promise<IndexStatus> {
+  const res = await fetch(`${baseUrl(url)}/api/status`);
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
   return res.json();
 }
 
-export async function fetchRemoteFolders(url: string): Promise<{ path: string; exists: boolean }[]> {
-  const res = await fetch(`${url.replace(/\/+$/, '')}/api/folders`);
-  if (!res.ok) throw new Error(`File server error: ${res.status}`);
+export async function triggerIndexing(url: string): Promise<string> {
+  const res = await fetch(`${baseUrl(url)}/api/index`, { method: 'POST' });
+  const data = await res.json();
+  if (!res.ok && res.status === 409) return 'already_indexing';
+  if (!res.ok) throw new Error(data.error || `Server error: ${res.status}`);
+  return data.status;
+}
+
+export async function queryIndex(url: string, question: string, topK = 6): Promise<RetrievalResult[]> {
+  const res = await fetch(`${baseUrl(url)}/api/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, top_k: topK }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Server error: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.results || [];
+}
+
+export async function fetchRemoteFolders(url: string): Promise<RemoteFolder[]> {
+  const res = await fetch(`${baseUrl(url)}/api/folders`);
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
   const data = await res.json();
   return data.folders || [];
 }

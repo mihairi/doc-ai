@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Square, Bot, User } from 'lucide-react';
+import { Send, Square, Bot, User, Server } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { LLMConfig, streamChat, ChatMessage } from '@/lib/llm-service';
 import { DocEntry, buildContextPrompt, getImageEntries } from '@/lib/document-store';
+import { loadFileServerConfig, queryIndex } from '@/lib/file-server';
 import { useToast } from '@/hooks/use-toast';
 
 interface DisplayMessage {
@@ -22,6 +23,7 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [usingServer, setUsingServer] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -32,6 +34,37 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
     }
   }, [messages]);
 
+  // Check if LlamaIndex server is available
+  useEffect(() => {
+    const fsConfig = loadFileServerConfig();
+    setUsingServer(fsConfig.enabled);
+  }, []);
+
+  const buildContextFromServer = async (question: string): Promise<string> => {
+    const fsConfig = loadFileServerConfig();
+    const results = await queryIndex(fsConfig.url, question, 6);
+    
+    if (results.length === 0) return '';
+
+    const chunks = results
+      .map((r, i) => {
+        const source = r.metadata?.file_name || r.metadata?.file_path || `Fragment ${i + 1}`;
+        return `--- ${source} (scor: ${r.score.toFixed(3)}) ---\n${r.text}`;
+      })
+      .join('\n\n');
+
+    return `Ești un asistent de documentație. Răspunde EXCLUSIV pe baza fragmentelor de documentație furnizate mai jos.
+
+REGULI IMPORTANTE:
+1. Răspunde în limba în care este pusă întrebarea.
+2. Dacă informația NU se găsește în documentele furnizate, spune clar acest lucru.
+3. NU folosi cunoștințe externe.
+4. Oferă răspuns concret și complet bazat pe fragmente.
+
+Documentație relevantă:
+${chunks}`;
+  };
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text || isStreaming) return;
@@ -41,8 +74,11 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
       return;
     }
 
-    if (documents.length === 0) {
-      toast({ title: 'Nu sunt documente încărcate', description: 'Contactați administratorul pentru a încărca documentația.', variant: 'destructive' });
+    const fsConfig = loadFileServerConfig();
+    const serverMode = fsConfig.enabled;
+
+    if (!serverMode && documents.length === 0) {
+      toast({ title: 'Nu sunt documente', description: 'Încărcați documente local sau activați LlamaIndex Server din Setări.', variant: 'destructive' });
       return;
     }
 
@@ -51,8 +87,26 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
     setInput('');
     setIsStreaming(true);
 
-    const systemPrompt = buildContextPrompt(documents, text);
-    const imageEntries = getImageEntries(documents);
+    let systemPrompt: string;
+    
+    try {
+      if (serverMode) {
+        // Use LlamaIndex server for retrieval
+        systemPrompt = await buildContextFromServer(text);
+        if (!systemPrompt) {
+          systemPrompt = 'Nu s-au găsit documente relevante pe server. Informează utilizatorul.';
+        }
+      } else {
+        // Fallback to local documents
+        systemPrompt = buildContextPrompt(documents, text);
+      }
+    } catch (err: any) {
+      toast({ title: 'Eroare retrieval', description: err?.message || 'Nu s-a putut interoga serverul.', variant: 'destructive' });
+      // Fallback to local
+      systemPrompt = buildContextPrompt(documents, text);
+    }
+
+    const imageEntries = !serverMode ? getImageEntries(documents) : [];
     const history: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
@@ -83,7 +137,7 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
         onDone: () => {
           setIsStreaming(false);
           if (!assistantSoFar.trim()) {
-            setMessages(prev => [...prev, { role: 'assistant', content: 'Nu am primit răspuns de la model. Verificați conexiunea la LLM și modelul selectat, apoi încercați din nou.' }]);
+            setMessages(prev => [...prev, { role: 'assistant', content: 'Nu am primit răspuns de la model. Verificați conexiunea la LLM și modelul selectat.' }]);
           }
         },
         onError: (err) => {
@@ -110,6 +164,9 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
     }
   };
 
+  const fsConfig = loadFileServerConfig();
+  const hasSource = fsConfig.enabled || documents.length > 0;
+
   return (
     <div className="flex flex-col h-full">
       {/* Messages */}
@@ -119,7 +176,14 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
             <Bot className="h-12 w-12 mb-4 opacity-30" />
              <h2 className="text-lg font-semibold mb-1 text-foreground">DocBot</h2>
              <p className="text-sm max-w-sm">
-               Încărcați documentația, conectați-vă la LLM-ul local și puneți întrebări. Răspunsurile provin exclusiv din documentele dvs.
+               {fsConfig.enabled ? (
+                 <span className="flex items-center justify-center gap-1.5">
+                   <Server className="h-3.5 w-3.5 text-primary" />
+                   Conectat la LlamaIndex Server · Puneți întrebări despre documentația dvs.
+                 </span>
+               ) : (
+                 'Încărcați documentația, conectați-vă la LLM-ul local și puneți întrebări.'
+               )}
              </p>
           </div>
         )}
@@ -175,8 +239,8 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={documents.length === 0 ? "Încărcați documente mai întâi..." : "Întrebați despre documentația dvs..."}
-            disabled={documents.length === 0}
+            placeholder={!hasSource ? "Configurați o sursă de documente mai întâi..." : "Întrebați despre documentația dvs..."}
+            disabled={!hasSource}
             className="min-h-[44px] max-h-32 resize-none bg-muted border-border font-sans text-sm"
             rows={1}
           />
@@ -188,7 +252,7 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
             <Button
               size="icon"
               onClick={handleSend}
-              disabled={!input.trim() || documents.length === 0}
+              disabled={!input.trim() || !hasSource}
               className="shrink-0 h-11 w-11"
             >
               <Send className="h-4 w-4" />
