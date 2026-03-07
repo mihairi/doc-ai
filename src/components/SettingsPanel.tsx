@@ -289,6 +289,36 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
                       {indexing || indexStatus?.indexing ? 'Se indexează...' : 'Re-indexare documente'}
                     </Button>
 
+                    {/* Progress indicator */}
+                    {(indexing || indexStatus?.indexing) && indexStatus?.progress && indexStatus.progress.phase && (
+                      <div className="space-y-1.5 bg-muted/50 rounded p-2">
+                        <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground">
+                          {indexStatus.progress.phase === 'loading_model' && (
+                            <><Cpu className="h-3 w-3 animate-pulse text-primary" /><span>Se încarcă modelul de embedding...</span></>
+                          )}
+                          {indexStatus.progress.phase === 'reading_files' && (
+                            <><FileText className="h-3 w-3 animate-pulse text-primary" /><span>Se citesc fișierele... ({indexStatus.progress.current}/{indexStatus.progress.total} foldere)</span></>
+                          )}
+                          {indexStatus.progress.phase === 'building_index' && (
+                            <><Database className="h-3 w-3 animate-pulse text-primary" /><span>Se construiește indexul... ({indexStatus.progress.total} documente)</span></>
+                          )}
+                        </div>
+                        {indexStatus.progress.total > 0 && indexStatus.progress.phase === 'reading_files' && (
+                          <div className="w-full bg-muted rounded-full h-1.5">
+                            <div
+                              className="bg-primary h-1.5 rounded-full transition-all duration-500"
+                              style={{ width: `${Math.round((indexStatus.progress.current / indexStatus.progress.total) * 100)}%` }}
+                            />
+                          </div>
+                        )}
+                        {indexStatus.progress.phase === 'building_index' && (
+                          <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                            <div className="bg-primary h-1.5 rounded-full animate-pulse w-full opacity-50" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {indexStatus && (
                       <div className="text-[10px] text-muted-foreground font-mono bg-muted/50 rounded p-2 space-y-0.5">
                         <div className="flex items-center gap-1">
