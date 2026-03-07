@@ -342,6 +342,9 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
                             <div className="bg-primary h-1.5 rounded-full animate-pulse w-full opacity-50" />
                           </div>
                         )}
+                        <div className="text-[10px] font-mono text-muted-foreground text-right">
+                          ⏱ {formatDuration(indexElapsed)}
+                        </div>
                       </div>
                     )}
 
@@ -353,6 +356,9 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
                         </div>
                         {indexStatus.last_indexed && (
                           <div>Ultima indexare: {indexStatus.last_indexed}</div>
+                        )}
+                        {lastIndexDuration !== null && (
+                          <div>Durată: {formatDuration(lastIndexDuration)}</div>
                         )}
                         {indexStatus.error && (
                           <div className="text-destructive">Eroare: {indexStatus.error}</div>
