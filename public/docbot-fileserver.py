@@ -57,20 +57,24 @@ _last_indexed = None
 _doc_count = 0
 _index_error = None
 _persist_dir = ".docbot-index"
+_index_progress = {"phase": "", "current": 0, "total": 0}
 
 
 def _do_index():
-    global _index, _indexing, _last_indexed, _doc_count, _index_error
+    global _index, _indexing, _last_indexed, _doc_count, _index_error, _index_progress
     try:
         _index_error = None
+        _index_progress = {"phase": "loading_model", "current": 0, "total": 0}
         print(f"[DocBot] Indexing {len(_folders)} folder(s)...")
 
         Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
-        Settings.llm = None  # We don't need LLM for indexing
+        Settings.llm = None
 
+        _index_progress = {"phase": "reading_files", "current": 0, "total": len(_folders)}
         documents = []
-        for folder in _folders:
+        for i, folder in enumerate(_folders):
             p = Path(folder).resolve()
+            _index_progress = {"phase": "reading_files", "current": i + 1, "total": len(_folders)}
             if not p.is_dir():
                 print(f"  ✗ Skipping non-existent folder: {p}")
                 continue
@@ -83,21 +87,28 @@ def _do_index():
 
         if not documents:
             _index_error = "No documents found in configured folders"
+            _index_progress = {"phase": "error", "current": 0, "total": 0}
             print(f"[DocBot] {_index_error}")
             _indexing = False
             return
 
+        _index_progress = {"phase": "building_index", "current": 0, "total": len(documents)}
         print(f"[DocBot] Building index from {len(documents)} document(s)...")
         with _index_lock:
-            _index = VectorStoreIndex.from_documents(documents)
+            _index = VectorStoreIndex.from_documents(
+                documents,
+                show_progress=True,
+            )
             _index.storage_context.persist(persist_dir=_persist_dir)
             _doc_count = len(documents)
 
+        _index_progress = {"phase": "done", "current": len(documents), "total": len(documents)}
         _last_indexed = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         print(f"[DocBot] Indexing complete. {_doc_count} documents indexed.")
 
     except Exception as e:
         _index_error = str(e)
+        _index_progress = {"phase": "error", "current": 0, "total": 0}
         print(f"[DocBot] Indexing error: {e}")
     finally:
         _indexing = False
@@ -122,6 +133,7 @@ def status():
         "indexing": _indexing,
         "error": _index_error,
         "folders": resolved,
+        "progress": _index_progress,
     })
 
 

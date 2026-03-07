@@ -5,6 +5,12 @@ export interface FileServerConfig {
   url: string; // e.g. http://127.0.0.1:5123
 }
 
+export interface IndexProgress {
+  phase: 'loading_model' | 'reading_files' | 'building_index' | 'done' | 'error' | '';
+  current: number;
+  total: number;
+}
+
 export interface IndexStatus {
   indexed: boolean;
   doc_count: number;
@@ -12,6 +18,7 @@ export interface IndexStatus {
   indexing: boolean;
   error: string | null;
   folders: string[];
+  progress: IndexProgress;
 }
 
 export interface RetrievalResult {
