@@ -39,6 +39,9 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
   const [fsChecking, setFsChecking] = useState(false);
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
   const [indexing, setIndexing] = useState(false);
+  const [indexStartTime, setIndexStartTime] = useState<number | null>(null);
+  const [indexElapsed, setIndexElapsed] = useState<number>(0);
+  const [lastIndexDuration, setLastIndexDuration] = useState<number | null>(null);
 
   const refreshModels = async () => {
     setLoading(true);
