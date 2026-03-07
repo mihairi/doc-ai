@@ -160,7 +160,7 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
       </Button>
 
       {open && (
-        <div className="absolute right-0 top-12 z-50 w-80 rounded-lg border bg-card p-4 shadow-xl space-y-4 max-h-[80vh] overflow-y-auto scrollbar-thin">
+        <div className="absolute left-0 top-12 z-50 w-80 rounded-lg border bg-card p-4 shadow-xl space-y-4 max-h-[80vh] overflow-y-auto scrollbar-thin">
           {/* LLM Config */}
           <div className="flex items-center justify-between">
             <h3 className="font-mono text-sm font-semibold text-foreground">Configurare LLM</h3>
