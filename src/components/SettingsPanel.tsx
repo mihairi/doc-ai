@@ -111,7 +111,7 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
           });
         }
       } catch {}
-    }, 2000);
+    }, 1000);
     return () => clearInterval(interval);
   }, [indexing, fsConfig.url, fsConfig.enabled]);
 
