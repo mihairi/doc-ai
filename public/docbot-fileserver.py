@@ -1,244 +1,220 @@
 #!/usr/bin/env python3
 """
-DocBot File Server - Companion script to serve local folders to DocBot.
-Run this on the same machine as Ollama to give DocBot access to local folders.
+DocBot File Server - LlamaIndex-powered RAG companion for DocBot.
 
 Usage:
-    python docbot-fileserver.py [--port 5123] [--folders /path/to/docs,/path/to/other]
+    pip install llama-index llama-index-embeddings-huggingface flask flask-cors
+    python docbot-fileserver.py --folders /path/to/docs
 
-The server exposes:
-    GET  /api/folders         — list configured folders
-    GET  /api/files           — list all files in all folders (recursive)
-    GET  /api/file?path=...   — read a single file's content (text or base64)
-    POST /api/scan            — re-scan all folders and return file list
+Endpoints:
     GET  /api/health          — health check
-
-All responses include CORS headers for browser access.
+    GET  /api/status          — index status
+    GET  /api/folders         — list configured folders
+    POST /api/index           — trigger (re-)indexing
+    POST /api/query           — semantic search
 """
 
 import os
 import sys
 import json
-import base64
+import time
 import argparse
-import mimetypes
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+import threading
 from pathlib import Path
 
-# Supported file extensions
-TEXT_EXTENSIONS = {
-    '.txt', '.md', '.html', '.htm', '.json', '.csv', '.xml', '.yaml', '.yml',
-    '.log', '.py', '.js', '.ts', '.tsx', '.jsx', '.css', '.sql', '.sh', '.env',
-    '.cfg', '.ini', '.toml', '.rst', '.rtf', '.tex', '.org', '.adoc', '.wiki',
-    '.bat', '.cmd', '.ps1', '.rb', '.php', '.java', '.c', '.cpp', '.h', '.hpp',
-    '.go', '.rs', '.swift', '.kt', '.scala', '.r', '.m', '.pl', '.lua',
-    '.dockerfile', '.makefile', '.gitignore', '.editorconfig',
-    '.svelte', '.vue', '.sass', '.scss', '.less',
-}
+try:
+    from flask import Flask, request, jsonify
+    from flask_cors import CORS
+except ImportError:
+    print("Missing dependencies. Install with:")
+    print("  pip install flask flask-cors llama-index llama-index-embeddings-huggingface")
+    sys.exit(1)
 
-IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg'}
-PDF_EXTENSION = '.pdf'
+try:
+    from llama_index.core import (
+        VectorStoreIndex,
+        SimpleDirectoryReader,
+        Settings,
+        StorageContext,
+        load_index_from_storage,
+    )
+    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+    HAS_LLAMA = True
+except ImportError:
+    HAS_LLAMA = False
+    print("Warning: llama-index not installed. Install with:")
+    print("  pip install llama-index llama-index-embeddings-huggingface")
 
-MAX_IMAGE_SIZE = 2 * 1024 * 1024   # 2MB
-MAX_PDF_SIZE = 10 * 1024 * 1024    # 10MB
-MAX_TEXT_SIZE = 5 * 1024 * 1024    # 5MB
+app = Flask(__name__)
+CORS(app)
+
+# Global state
+_folders: list[str] = []
+_index = None
+_index_lock = threading.Lock()
+_indexing = False
+_last_indexed = None
+_doc_count = 0
+_index_error = None
+_persist_dir = ".docbot-index"
 
 
-def get_file_type(filepath: str):
-    ext = Path(filepath).suffix.lower()
-    name = Path(filepath).name.lower()
-    if ext in IMAGE_EXTENSIONS:
-        return 'image'
-    if ext == PDF_EXTENSION:
-        return 'pdf'
-    if ext in TEXT_EXTENSIONS:
-        return 'text'
-    if name in ('dockerfile', 'makefile', 'readme', 'license', 'changelog'):
-        return 'text'
-    return None
+def _do_index():
+    global _index, _indexing, _last_indexed, _doc_count, _index_error
+    try:
+        _index_error = None
+        print(f"[DocBot] Indexing {len(_folders)} folder(s)...")
 
+        Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+        Settings.llm = None  # We don't need LLM for indexing
 
-class FileServerHandler(BaseHTTPRequestHandler):
-    folders = []
-    _file_cache = None
-
-    def _cors_headers(self):
-        return {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-            'Content-Type': 'application/json; charset=utf-8',
-        }
-
-    def _send_json(self, data, status=200):
-        body = json.dumps(data, ensure_ascii=False).encode('utf-8')
-        self.send_response(status)
-        for k, v in self._cors_headers().items():
-            self.send_header(k, v)
-        self.send_header('Content-Length', str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def do_OPTIONS(self):
-        self.send_response(204)
-        for k, v in self._cors_headers().items():
-            self.send_header(k, v)
-        self.end_headers()
-
-    def _scan_folders(self):
-        files = []
-        for folder in self.folders:
-            folder_path = Path(folder).resolve()
-            if not folder_path.is_dir():
+        documents = []
+        for folder in _folders:
+            p = Path(folder).resolve()
+            if not p.is_dir():
+                print(f"  ✗ Skipping non-existent folder: {p}")
                 continue
-            for filepath in folder_path.rglob('*'):
-                if not filepath.is_file():
-                    continue
-                ftype = get_file_type(str(filepath))
-                if ftype is None:
-                    continue
-                rel = str(filepath.relative_to(folder_path))
-                size = filepath.stat().st_size
-
-                # Skip oversized files
-                if ftype == 'image' and size > MAX_IMAGE_SIZE:
-                    continue
-                if ftype == 'pdf' and size > MAX_PDF_SIZE:
-                    continue
-                if ftype == 'text' and size > MAX_TEXT_SIZE:
-                    continue
-
-                files.append({
-                    'name': rel,
-                    'path': str(filepath),
-                    'folder': str(folder_path),
-                    'type': ftype,
-                    'size': size,
-                })
-        FileServerHandler._file_cache = files
-        return files
-
-    def _get_files(self):
-        if FileServerHandler._file_cache is not None:
-            return FileServerHandler._file_cache
-        return self._scan_folders()
-
-    def _read_file(self, filepath: str):
-        p = Path(filepath)
-        if not p.is_file():
-            return None, None
-
-        # Security: ensure path is within one of the configured folders
-        resolved = p.resolve()
-        allowed = False
-        for folder in self.folders:
-            if str(resolved).startswith(str(Path(folder).resolve())):
-                allowed = True
-                break
-        if not allowed:
-            return None, None
-
-        ftype = get_file_type(str(p))
-        if ftype == 'image':
-            mime = mimetypes.guess_type(str(p))[0] or 'image/png'
-            data = p.read_bytes()
-            b64 = base64.b64encode(data).decode('ascii')
-            return ftype, f'data:{mime};base64,{b64}'
-        elif ftype == 'pdf':
-            # Return raw text extraction would need a library;
-            # for now return base64 so the client can handle it
-            data = p.read_bytes()
-            b64 = base64.b64encode(data).decode('ascii')
-            return ftype, f'data:application/pdf;base64,{b64}'
-        else:
+            print(f"  ✓ Reading: {p}")
             try:
-                text = p.read_text(encoding='utf-8', errors='replace')
-                return 'text', text
-            except Exception:
-                return None, None
+                reader = SimpleDirectoryReader(str(p), recursive=True)
+                documents.extend(reader.load_data())
+            except Exception as e:
+                print(f"  ✗ Error reading {p}: {e}")
 
-    def do_GET(self):
-        parsed = urlparse(self.path)
-        path = parsed.path.rstrip('/')
-        params = parse_qs(parsed.query)
+        if not documents:
+            _index_error = "No documents found in configured folders"
+            print(f"[DocBot] {_index_error}")
+            _indexing = False
+            return
 
-        if path == '/api/health':
-            self._send_json({'status': 'ok', 'folders': len(self.folders)})
+        print(f"[DocBot] Building index from {len(documents)} document(s)...")
+        with _index_lock:
+            _index = VectorStoreIndex.from_documents(documents)
+            _index.storage_context.persist(persist_dir=_persist_dir)
+            _doc_count = len(documents)
 
-        elif path == '/api/folders':
-            folder_info = []
-            for f in self.folders:
-                p = Path(f).resolve()
-                folder_info.append({
-                    'path': str(p),
-                    'exists': p.is_dir(),
-                })
-            self._send_json({'folders': folder_info})
+        _last_indexed = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        print(f"[DocBot] Indexing complete. {_doc_count} documents indexed.")
 
-        elif path == '/api/files':
-            files = self._get_files()
-            self._send_json({'files': files, 'total': len(files)})
+    except Exception as e:
+        _index_error = str(e)
+        print(f"[DocBot] Indexing error: {e}")
+    finally:
+        _indexing = False
 
-        elif path == '/api/file':
-            file_path = params.get('path', [None])[0]
-            if not file_path:
-                self._send_json({'error': 'Missing path parameter'}, 400)
-                return
-            ftype, content = self._read_file(file_path)
-            if content is None:
-                self._send_json({'error': 'File not found or not allowed'}, 404)
-                return
-            self._send_json({'type': ftype, 'content': content, 'name': Path(file_path).name})
 
-        else:
-            self._send_json({'error': 'Not found'}, 404)
+@app.route("/api/health", methods=["GET"])
+def health():
+    return jsonify({
+        "status": "ok",
+        "engine": "llamaindex" if HAS_LLAMA else "none",
+        "folders": len(_folders),
+    })
 
-    def do_POST(self):
-        parsed = urlparse(self.path)
-        path = parsed.path.rstrip('/')
 
-        if path == '/api/scan':
-            files = self._scan_folders()
-            self._send_json({'files': files, 'total': len(files)})
-        else:
-            self._send_json({'error': 'Not found'}, 404)
+@app.route("/api/status", methods=["GET"])
+def status():
+    resolved = [str(Path(f).resolve()) for f in _folders]
+    return jsonify({
+        "indexed": _index is not None,
+        "doc_count": _doc_count,
+        "last_indexed": _last_indexed,
+        "indexing": _indexing,
+        "error": _index_error,
+        "folders": resolved,
+    })
 
-    def log_message(self, format, *args):
-        print(f"[DocBot FileServer] {args[0]}")
+
+@app.route("/api/folders", methods=["GET"])
+def folders():
+    folder_info = []
+    for f in _folders:
+        p = Path(f).resolve()
+        count = sum(1 for _ in p.rglob("*") if _.is_file()) if p.is_dir() else 0
+        folder_info.append({"path": str(p), "exists": p.is_dir(), "file_count": count})
+    return jsonify({"folders": folder_info})
+
+
+@app.route("/api/index", methods=["POST"])
+def index():
+    global _indexing
+    if not HAS_LLAMA:
+        return jsonify({"error": "llama-index not installed"}), 500
+    if _indexing:
+        return jsonify({"status": "already_indexing"}), 409
+
+    _indexing = True
+    thread = threading.Thread(target=_do_index, daemon=True)
+    thread.start()
+    return jsonify({"status": "indexing_started"})
+
+
+@app.route("/api/query", methods=["POST"])
+def query():
+    if not HAS_LLAMA:
+        return jsonify({"error": "llama-index not installed"}), 500
+    if _index is None:
+        return jsonify({"error": "Index not built yet. Trigger /api/index first."}), 400
+
+    data = request.get_json() or {}
+    question = data.get("question", "")
+    top_k = data.get("top_k", 6)
+
+    if not question:
+        return jsonify({"error": "Missing 'question' field"}), 400
+
+    try:
+        with _index_lock:
+            retriever = _index.as_retriever(similarity_top_k=top_k)
+            nodes = retriever.retrieve(question)
+
+        results = []
+        for node in nodes:
+            results.append({
+                "text": node.get_text(),
+                "score": float(node.get_score()) if node.get_score() is not None else 0,
+                "metadata": dict(node.metadata) if node.metadata else {},
+            })
+        return jsonify({"results": results})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 def main():
-    parser = argparse.ArgumentParser(description='DocBot File Server')
-    parser.add_argument('--port', type=int, default=5123, help='Port to listen on (default: 5123)')
-    parser.add_argument('--folders', type=str, required=True,
-                        help='Comma-separated list of folder paths to serve')
+    global _folders, _index
+
+    parser = argparse.ArgumentParser(description="DocBot File Server (LlamaIndex)")
+    parser.add_argument("--port", type=int, default=5123, help="Port (default: 5123)")
+    parser.add_argument("--folders", type=str, required=True,
+                        help="Comma-separated folder paths")
     args = parser.parse_args()
 
-    folders = [f.strip() for f in args.folders.split(',') if f.strip()]
-    if not folders:
+    _folders = [f.strip() for f in args.folders.split(",") if f.strip()]
+    if not _folders:
         print("Error: No folders specified")
         sys.exit(1)
 
-    FileServerHandler.folders = folders
-
-    for f in folders:
+    for f in _folders:
         p = Path(f).resolve()
-        if p.is_dir():
-            print(f"  ✓ Folder: {p}")
-        else:
-            print(f"  ✗ Folder not found: {p}")
+        print(f"  {'✓' if p.is_dir() else '✗'} Folder: {p}")
 
-    server = HTTPServer(('0.0.0.0', args.port), FileServerHandler)
+    # Try loading persisted index
+    if HAS_LLAMA and Path(_persist_dir).exists():
+        try:
+            print("[DocBot] Loading persisted index...")
+            Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+            Settings.llm = None
+            storage_context = StorageContext.from_defaults(persist_dir=_persist_dir)
+            _index = load_index_from_storage(storage_context)
+            print("[DocBot] Persisted index loaded.")
+        except Exception as e:
+            print(f"[DocBot] Could not load persisted index: {e}")
+
     print(f"\nDocBot File Server running on http://0.0.0.0:{args.port}")
-    print(f"Serving {len(folders)} folder(s)\n")
-
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\nShutting down...")
-        server.server_close()
+    print(f"Serving {len(_folders)} folder(s)\n")
+    app.run(host="0.0.0.0", port=args.port, debug=False)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
