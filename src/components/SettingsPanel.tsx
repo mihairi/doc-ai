@@ -107,6 +107,10 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
         setIndexStatus(status);
         if (!status.indexing) {
           setIndexing(false);
+          if (indexStartTime) {
+            setLastIndexDuration(Math.round((Date.now() - indexStartTime) / 1000));
+            setIndexStartTime(null);
+          }
           toast({
             title: status.error ? 'Eroare la indexare' : 'Indexare completă',
             description: status.error || `${status.doc_count} documente indexate.`,
@@ -116,7 +120,23 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
       } catch {}
     }, 1000);
     return () => clearInterval(interval);
-  }, [indexing, fsConfig.url, fsConfig.enabled]);
+  }, [indexing, fsConfig.url, fsConfig.enabled, indexStartTime]);
+
+  // Live elapsed timer
+  useEffect(() => {
+    if (!indexStartTime) return;
+    const interval = setInterval(() => {
+      setIndexElapsed(Math.round((Date.now() - indexStartTime) / 1000));
+    }, 500);
+    return () => clearInterval(interval);
+  }, [indexStartTime]);
+
+  const formatDuration = (seconds: number) => {
+    if (seconds < 60) return `${seconds}s`;
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}m ${s}s`;
+  };
 
   const handleTriggerIndex = async () => {
     try {
@@ -125,6 +145,9 @@ export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
         toast({ title: 'Indexarea este deja în curs...' });
       } else {
         setIndexing(true);
+        setIndexStartTime(Date.now());
+        setIndexElapsed(0);
+        setLastIndexDuration(null);
         toast({ title: 'Indexare pornită', description: 'Se procesează documentele...' });
       }
     } catch (err: any) {
