@@ -9,17 +9,11 @@ async function hashPassword(password: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Pre-computed SHA-256 hash of 'admin123' + salt '__docbot_salt_2024__'
-// To change the password, run: hashPassword('your-new-password') in console and paste result here
-let _expectedHash: string | null = null;
-
-// Compute the expected hash once at startup
-async function getExpectedHash(): Promise<string> {
-  if (!_expectedHash) {
-    _expectedHash = await hashPassword('admin123');
-  }
-  return _expectedHash;
-}
+// Pre-computed SHA-256 hash — password is NOT stored in source.
+// To change, run in browser console:
+//   crypto.subtle.digest('SHA-256', new TextEncoder().encode('yourPassword' + '__docbot_salt_2024__'))
+//     .then(b => Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2,'0')).join(''))
+const EXPECTED_HASH = '52a358e48a726774b2d67971ca54fac53676aa2a3e18e52e440f8f9e401e4a9e';
 
 let _cachedSessionHash: string | null = null;
 
@@ -31,8 +25,7 @@ export function isAdminAuthenticated(): boolean {
 
 export async function authenticateAdmin(password: string): Promise<boolean> {
   const hash = await hashPassword(password);
-  const expected = await getExpectedHash();
-  if (hash !== expected) return false;
+  if (hash !== EXPECTED_HASH) return false;
   _cachedSessionHash = hash;
   sessionStorage.setItem(SESSION_KEY, hash);
   return true;

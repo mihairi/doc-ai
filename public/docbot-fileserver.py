@@ -46,7 +46,7 @@ except ImportError:
     print("  pip install llama-index llama-index-embeddings-huggingface")
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://*.lovable.app"])
+CORS(app, origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://id-preview--294c8387-4500-4536-8018-27cc834cbe4a.lovable.app"])
 
 # Global state
 _folders: list[str] = []
