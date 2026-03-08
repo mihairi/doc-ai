@@ -46,16 +46,19 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
     
     if (results.length === 0) return '';
 
+    const fsBaseUrl = loadFileServerConfig().url.replace(/\/+$/, '');
     const chunks = results
       .map((r, i) => {
         const fileName = r.metadata?.file_name || r.metadata?.file_path || `Fragment ${i + 1}`;
         const page = r.metadata?.page_label || r.metadata?.page || '';
         const section = r.metadata?.section || r.metadata?.header || '';
         const url = r.metadata?.url || r.metadata?.source_url || '';
+        // Build a clickable file URL via the file server
+        const fileUrl = r.metadata?.file_url ? `${fsBaseUrl}${r.metadata.file_url}` : url;
         let sourceLabel = `${fileName}`;
         if (page) sourceLabel += ` | pagina ${page}`;
         if (section) sourceLabel += ` | secțiunea: ${section}`;
-        if (url) sourceLabel += ` | url: ${url}`;
+        if (fileUrl) sourceLabel += ` | url: ${fileUrl}`;
         return `--- ${sourceLabel} (scor: ${r.score.toFixed(3)}) ---\n${r.text}`;
       })
       .join('\n\n');
