@@ -189,7 +189,8 @@ export function buildContextPrompt(docs: DocEntry[], question?: string): string 
     const snippet = d.content.slice(0, MAX_DOC_CHARS);
     if (totalChars + snippet.length > MAX_TOTAL_CHARS) break;
     totalChars += snippet.length;
-    textSections.push(`--- Document: ${d.name} ---\n${snippet}`);
+    const sourceInfo = d.source === 'url' ? `(sursă: ${d.name})` : `(document local: ${d.name})`;
+    textSections.push(`--- Document: ${d.name} ${sourceInfo} ---\n${snippet}`);
   }
 
   let combined = textSections.join('\n\n');
@@ -208,6 +209,12 @@ REGULI IMPORTANTE:
 3. NU folosi cunoștințe externe.
 4. Dacă informația există în documente, oferă răspuns concret și complet.
 5. Dacă sunt imagini atașate, descrie ce vezi în ele și folosește conținutul vizual în răspuns.
+6. La finalul fiecărui răspuns, adaugă o secțiune **📄 Surse:** care listează documentele/paginile folosite. Pentru fiecare sursă include:
+   - Numele documentului sau titlul paginii web
+   - Secțiunea relevantă (dacă este identificabilă din conținut)
+   - Numărul paginii (dacă este disponibil în metadate)
+   - Link funcțional (dacă sursa este un URL, folosește format Markdown: [titlu](url))
+   - Pentru documente locale fără URL, menționează doar numele fișierului
 
 Documentație:
 ${combined}`;

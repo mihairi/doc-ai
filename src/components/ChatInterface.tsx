@@ -48,8 +48,15 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
 
     const chunks = results
       .map((r, i) => {
-        const source = r.metadata?.file_name || r.metadata?.file_path || `Fragment ${i + 1}`;
-        return `--- ${source} (scor: ${r.score.toFixed(3)}) ---\n${r.text}`;
+        const fileName = r.metadata?.file_name || r.metadata?.file_path || `Fragment ${i + 1}`;
+        const page = r.metadata?.page_label || r.metadata?.page || '';
+        const section = r.metadata?.section || r.metadata?.header || '';
+        const url = r.metadata?.url || r.metadata?.source_url || '';
+        let sourceLabel = `${fileName}`;
+        if (page) sourceLabel += ` | pagina ${page}`;
+        if (section) sourceLabel += ` | secțiunea: ${section}`;
+        if (url) sourceLabel += ` | url: ${url}`;
+        return `--- ${sourceLabel} (scor: ${r.score.toFixed(3)}) ---\n${r.text}`;
       })
       .join('\n\n');
 
@@ -60,6 +67,12 @@ REGULI IMPORTANTE:
 2. Dacă informația NU se găsește în documentele furnizate, spune clar acest lucru.
 3. NU folosi cunoștințe externe.
 4. Oferă răspuns concret și complet bazat pe fragmente.
+5. La finalul fiecărui răspuns, adaugă o secțiune **📄 Surse:** care listează sursele folosite. Pentru fiecare sursă include:
+   - Numele fișierului sau documentului
+   - Secțiunea relevantă (dacă apare în metadate)
+   - Numărul paginii (dacă apare în metadate)
+   - Link funcțional clickabil în format Markdown [titlu](url) dacă există un URL în metadate
+   - Scorul de relevanță
 
 Documentație relevantă:
 ${chunks}`;
