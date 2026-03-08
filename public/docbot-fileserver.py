@@ -167,6 +167,27 @@ def index():
     return jsonify({"status": "indexing_started"})
 
 
+@app.route("/api/file", methods=["GET"])
+def serve_file():
+    """Serve a document file by its path (must be within configured folders)."""
+    file_path = request.args.get("path", "")
+    if not file_path:
+        return jsonify({"error": "Missing 'path' parameter"}), 400
+
+    resolved = Path(file_path).resolve()
+    # Security: only serve files within configured folders
+    allowed = False
+    for folder in _folders:
+        if str(resolved).startswith(str(Path(folder).resolve())):
+            allowed = True
+            break
+    if not allowed or not resolved.is_file():
+        return jsonify({"error": "File not found or not allowed"}), 404
+
+    from flask import send_file
+    return send_file(str(resolved))
+
+
 @app.route("/api/query", methods=["POST"])
 def query():
     if not HAS_LLAMA:
@@ -188,10 +209,16 @@ def query():
 
         results = []
         for node in nodes:
+            meta = dict(node.metadata) if node.metadata else {}
+            # Add a file_url for the frontend to create clickable links
+            file_path = meta.get("file_path", "")
+            if file_path:
+                from urllib.parse import quote
+                meta["file_url"] = f"/api/file?path={quote(str(Path(file_path).resolve()), safe='')}"
             results.append({
                 "text": node.get_text(),
                 "score": float(node.get_score()) if node.get_score() is not None else 0,
-                "metadata": dict(node.metadata) if node.metadata else {},
+                "metadata": meta,
             })
         return jsonify({"results": results})
 
