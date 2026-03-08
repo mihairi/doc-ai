@@ -59,6 +59,11 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
         if (page && fileUrl && fileUrl.toLowerCase().includes('.pdf') && !fileUrl.includes('#page=')) {
           fileUrl += `#page=${page}`;
         }
+        // Ensure HTML section anchor is present
+        if (section && fileUrl && /\.html?/i.test(fileUrl) && !fileUrl.includes('#')) {
+          const anchor = section.trim().toLowerCase().replace(/\s+/g, '-');
+          fileUrl += `#${encodeURIComponent(anchor)}`;
+        }
         let sourceLabel = `${fileName}`;
         if (page) sourceLabel += ` | pagina ${page}`;
         if (section) sourceLabel += ` | secțiunea: ${section}`;
