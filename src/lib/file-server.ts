@@ -57,7 +57,8 @@ export async function checkFileServerHealth(url: string): Promise<{ ok: boolean;
     if (!res.ok) return { ok: false };
     const data = await res.json();
     return { ok: data.status === 'ok', engine: data.engine };
-  } catch {
+  } catch (err) {
+    console.error('[FileServer] Health check failed:', err);
     return { ok: false };
   }
 }
