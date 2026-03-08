@@ -146,10 +146,31 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
     const url = urlInput.trim();
     if (!url) return;
 
-    if (url.startsWith('file://') || url.startsWith('/') || url.startsWith('C:\\') || url.startsWith('D:\\')) {
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        toast({
+          title: 'Protocol invalid',
+          description: 'Doar URL-uri HTTP/HTTPS sunt acceptate.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const blockedHosts = ['localhost', '127.0.0.1', '0.0.0.0', '[::1]'];
+      const hostname = parsed.hostname.toLowerCase();
+      const isPrivateIP = /^(10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+)$/.test(hostname);
+      if (blockedHosts.includes(hostname) || isPrivateIP) {
+        toast({
+          title: 'URL blocat',
+          description: 'Accesul la adrese locale sau de rețea internă nu este permis.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    } catch {
       toast({
-        title: 'Fișier local detectat',
-        description: 'Nu se pot accesa fișiere locale prin URL. Folosiți butonul "Fișiere" sau "Folder" pentru încărcare.',
+        title: 'URL invalid',
+        description: 'Introduceți un URL valid (ex: https://example.com).',
         variant: 'destructive',
       });
       return;
