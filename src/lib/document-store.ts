@@ -180,8 +180,8 @@ export function buildContextPrompt(docs: DocEntry[], question?: string): string 
     ? rankedTextDocs.filter(x => x.score > 0).slice(0, 8).map(x => x.doc)
     : rankedTextDocs.slice(0, 4).map(x => x.doc);
 
-  const MAX_DOC_CHARS = 3000;
-  const MAX_TOTAL_CHARS = 18000;
+  const MAX_DOC_CHARS = 2000;
+  const MAX_TOTAL_CHARS = 6000;
   let totalChars = 0;
 
   const textSections: string[] = [];

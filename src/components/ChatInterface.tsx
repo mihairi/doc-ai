@@ -132,9 +132,21 @@ ${chunks}`;
     }
 
     const imageEntries = !serverMode ? getImageEntries(documents) : [];
+
+    // Truncate history to avoid exceeding model context window
+    const MAX_HISTORY_CHARS = 3000;
+    let historyChars = 0;
+    const recentMessages: ChatMessage[] = [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (historyChars + m.content.length > MAX_HISTORY_CHARS) break;
+      historyChars += m.content.length;
+      recentMessages.unshift({ role: m.role as 'user' | 'assistant', content: m.content });
+    }
+
     const history: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
-      ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+      ...recentMessages,
       { role: 'user' as const, content: text },
     ];
 
