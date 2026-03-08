@@ -219,6 +219,13 @@ def query():
                 page = meta.get("page_label") or meta.get("page")
                 if page and str(file_path).lower().endswith(".pdf"):
                     file_url += f"#page={page}"
+                # Append #section anchor for HTML files when section/header metadata is available
+                elif str(file_path).lower().endswith((".html", ".htm")):
+                    section = meta.get("section") or meta.get("header") or meta.get("header_id") or ""
+                    if section:
+                        from urllib.parse import quote as url_quote
+                        anchor = section.strip().lower().replace(" ", "-")
+                        file_url += f"#{url_quote(anchor, safe='-_')}"
                 meta["file_url"] = file_url
             results.append({
                 "text": node.get_text(),
