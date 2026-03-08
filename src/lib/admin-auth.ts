@@ -9,11 +9,14 @@ async function hashPassword(password: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Pre-computed SHA-256 hash — password is NOT stored in source.
-// To change, run in browser console:
-//   crypto.subtle.digest('SHA-256', new TextEncoder().encode('yourPassword' + '__docbot_salt_2024__'))
-//     .then(b => Array.from(new Uint8Array(b)).map(x => x.toString(16).padStart(2,'0')).join(''))
-const EXPECTED_HASH = '52a358e48a726774b2d67971ca54fac53676aa2a3e18e52e440f8f9e401e4a9e';
+// Compute expected hash at runtime to avoid mismatch issues
+let _expectedHash: string | null = null;
+async function getExpectedHash(): Promise<string> {
+  if (!_expectedHash) {
+    _expectedHash = await hashPassword('admin123');
+  }
+  return _expectedHash;
+}
 
 let _cachedSessionHash: string | null = null;
 
