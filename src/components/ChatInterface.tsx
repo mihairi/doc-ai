@@ -219,7 +219,16 @@ ${chunks}`;
             >
               {msg.role === 'assistant' ? (
                 <div className="prose prose-sm prose-invert max-w-none [&_code]:font-mono [&_code]:text-primary [&_pre]:bg-muted [&_pre]:rounded-md">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      a: ({ href, children }) => (
+                        <a href={href} target="_blank" rel="noopener noreferrer">
+                          {children}
+                        </a>
+                      ),
+                    }}
+                  >{msg.content}</ReactMarkdown>
                 </div>
               ) : (
                 <p className="whitespace-pre-wrap">{msg.content}</p>
