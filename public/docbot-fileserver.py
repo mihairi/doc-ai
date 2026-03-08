@@ -50,6 +50,7 @@ CORS(app, origins=[
     "http://localhost:5173", "http://127.0.0.1:5173",
     "http://localhost:5174", "http://127.0.0.1:5174",
     "http://localhost:3000", "http://127.0.0.1:3000",
+    "http://localhost:8080", "http://127.0.0.1:8080",
     "https://id-preview--294c8387-4500-4536-8018-27cc834cbe4a.lovable.app",
 ])
 
