@@ -46,7 +46,7 @@ except ImportError:
     print("  pip install llama-index llama-index-embeddings-huggingface")
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://*.lovable.app"])
 
 # Global state
 _folders: list[str] = []
@@ -223,9 +223,9 @@ def main():
         except Exception as e:
             print(f"[DocBot] Could not load persisted index: {e}")
 
-    print(f"\nDocBot File Server running on http://0.0.0.0:{args.port}")
+    print(f"\nDocBot File Server running on http://127.0.0.1:{args.port}")
     print(f"Serving {len(_folders)} folder(s)\n")
-    app.run(host="0.0.0.0", port=args.port, debug=False)
+    app.run(host="127.0.0.1", port=args.port, debug=False)
 
 
 if __name__ == "__main__":

@@ -35,8 +35,9 @@ const Index = () => {
     setDocuments(docs);
   }, []);
 
-  const handleAdminLogin = () => {
-    if (authenticateAdmin(password)) {
+  const handleAdminLogin = async () => {
+    const success = await authenticateAdmin(password);
+    if (success) {
       setIsAdmin(true);
       setShowLogin(false);
       setPassword('');
