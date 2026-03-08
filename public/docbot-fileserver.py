@@ -214,7 +214,12 @@ def query():
             file_path = meta.get("file_path", "")
             if file_path:
                 from urllib.parse import quote
-                meta["file_url"] = f"/api/file?path={quote(str(Path(file_path).resolve()), safe='')}"
+                file_url = f"/api/file?path={quote(str(Path(file_path).resolve()), safe='')}"
+                # Append #page=N for PDF files when page metadata is available
+                page = meta.get("page_label") or meta.get("page")
+                if page and str(file_path).lower().endswith(".pdf"):
+                    file_url += f"#page={page}"
+                meta["file_url"] = file_url
             results.append({
                 "text": node.get_text(),
                 "score": float(node.get_score()) if node.get_score() is not None else 0,
