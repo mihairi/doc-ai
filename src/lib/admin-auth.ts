@@ -27,8 +27,9 @@ export function isAdminAuthenticated(): boolean {
 }
 
 export async function authenticateAdmin(password: string): Promise<boolean> {
+  const expectedHash = await getExpectedHash();
   const hash = await hashPassword(password);
-  if (hash !== EXPECTED_HASH) return false;
+  if (hash !== expectedHash) return false;
   _cachedSessionHash = hash;
   sessionStorage.setItem(SESSION_KEY, hash);
   return true;
