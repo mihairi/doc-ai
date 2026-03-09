@@ -162,8 +162,16 @@ export async function streamChat({
         body: JSON.stringify({ model: config.model, messages: openaiMessages, stream: true }),
         signal,
       });
-      if (!res.ok) throw new Error(`LM Studio error: ${res.status}`);
-      if (!res.body) throw new Error('LM Studio stream indisponibil');
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '');
+        let detail = `LM Studio error: ${res.status}`;
+        try {
+          const parsed = JSON.parse(errBody);
+          if (parsed.error?.message) detail = `LM Studio: ${parsed.error.message}`;
+          else if (parsed.error) detail = `LM Studio: ${typeof parsed.error === 'string' ? parsed.error : JSON.stringify(parsed.error)}`;
+        } catch {}
+        throw new Error(detail);
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -184,10 +192,21 @@ export async function streamChat({
 
         try {
           const parsed = JSON.parse(json);
+          // Detect error responses embedded in stream
+          if (parsed.error) {
+            const errMsg = typeof parsed.error === 'string' ? parsed.error : parsed.error?.message || JSON.stringify(parsed.error);
+            onError(`LM Studio: ${errMsg}`);
+            return true;
+          }
           const deltaContent = parsed.choices?.[0]?.delta?.content;
           const messageContent = parsed.choices?.[0]?.message?.content;
+          const finishReason = parsed.choices?.[0]?.finish_reason;
           const content = deltaContent || messageContent;
           if (content) onDelta(content);
+          if (finishReason === 'stop') {
+            onDone();
+            return true;
+          }
         } catch {
           // ignore malformed/incomplete SSE chunks
         }
