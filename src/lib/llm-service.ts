@@ -162,8 +162,16 @@ export async function streamChat({
         body: JSON.stringify({ model: config.model, messages: openaiMessages, stream: true }),
         signal,
       });
-      if (!res.ok) throw new Error(`LM Studio error: ${res.status}`);
-      if (!res.body) throw new Error('LM Studio stream indisponibil');
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '');
+        let detail = `LM Studio error: ${res.status}`;
+        try {
+          const parsed = JSON.parse(errBody);
+          if (parsed.error?.message) detail = `LM Studio: ${parsed.error.message}`;
+          else if (parsed.error) detail = `LM Studio: ${typeof parsed.error === 'string' ? parsed.error : JSON.stringify(parsed.error)}`;
+        } catch {}
+        throw new Error(detail);
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
