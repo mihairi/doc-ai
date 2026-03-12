@@ -6,6 +6,7 @@ import { ChatInterface } from '@/components/ChatInterface';
 import { LLMConfig, loadConfig } from '@/lib/llm-service';
 import { DocEntry, loadDocuments, migrateFromLocalStorage } from '@/lib/document-store';
 import { isAdminAuthenticated, authenticateAdmin, logoutAdmin } from '@/lib/admin-auth';
+import { loadAppConfig, ensureDefaultPassword, applyBackground, applyAppName, AppConfig } from '@/lib/app-config';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -16,7 +17,18 @@ const Index = () => {
   const [isAdmin, setIsAdmin] = useState(isAdminAuthenticated);
   const [showLogin, setShowLogin] = useState(false);
   const [password, setPassword] = useState('');
+  const [appConfig, setAppConfig] = useState<AppConfig>(loadAppConfig);
   const { toast } = useToast();
+
+  // Initialize app config (ensure default password, apply settings)
+  useEffect(() => {
+    (async () => {
+      const cfg = await ensureDefaultPassword(loadAppConfig());
+      setAppConfig(cfg);
+      applyBackground(cfg.backgroundHsl);
+      applyAppName(cfg.appName);
+    })();
+  }, []);
 
   // Load docs from IndexedDB on mount (+ migrate from localStorage if needed)
   useEffect(() => {
@@ -33,6 +45,12 @@ const Index = () => {
   const refreshDocs = useCallback(async () => {
     const docs = await loadDocuments();
     setDocuments(docs);
+  }, []);
+
+  const handleAppConfigChange = useCallback((newConfig: AppConfig) => {
+    setAppConfig(newConfig);
+    applyBackground(newConfig.backgroundHsl);
+    applyAppName(newConfig.appName);
   }, []);
 
   const handleAdminLogin = async () => {
@@ -61,10 +79,10 @@ const Index = () => {
           <div className="p-4 border-b border-border flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Terminal className="h-5 w-5 text-primary" />
-              <h1 className="font-mono text-sm font-bold tracking-tight text-foreground">DocBot</h1>
+              <h1 className="font-mono text-sm font-bold tracking-tight text-foreground">{appConfig.appName}</h1>
             </div>
             <div className="flex items-center gap-1">
-              <SettingsPanel config={config} onConfigChange={setConfig} />
+              <SettingsPanel config={config} onConfigChange={setConfig} appConfig={appConfig} onAppConfigChange={handleAppConfigChange} />
               <Button variant="ghost" size="icon" onClick={handleAdminLogout} title="Deconectare admin">
                 <LogOut className="h-4 w-4" />
               </Button>
@@ -88,7 +106,7 @@ const Index = () => {
           <div className="p-3 border-b border-border flex items-center justify-between bg-card">
             <div className="flex items-center gap-2">
               <Terminal className="h-5 w-5 text-primary" />
-              <h1 className="font-mono text-sm font-bold tracking-tight text-foreground">DocBot</h1>
+              <h1 className="font-mono text-sm font-bold tracking-tight text-foreground">{appConfig.appName}</h1>
             </div>
             {!showLogin ? (
               <Button variant="ghost" size="icon" onClick={() => setShowLogin(true)} title="Admin login">
