@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, RefreshCw, Check, Wifi, WifiOff, Server, FolderOpen, Database, Zap, FileText, Cpu } from 'lucide-react';
+import { Settings, RefreshCw, Check, Wifi, WifiOff, Server, FolderOpen, Database, Zap, FileText, Cpu, Palette, Type, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,14 +17,17 @@ import {
   triggerIndexing,
   RemoteFolder,
 } from '@/lib/file-server';
+import { AppConfig, saveAppConfig, hashPassword } from '@/lib/app-config';
 import { useToast } from '@/hooks/use-toast';
 
 interface SettingsPanelProps {
   config: LLMConfig;
   onConfigChange: (config: LLMConfig) => void;
+  appConfig: AppConfig;
+  onAppConfigChange: (config: AppConfig) => void;
 }
 
-export function SettingsPanel({ config, onConfigChange }: SettingsPanelProps) {
+export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigChange }: SettingsPanelProps) {
   const [models, setModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [connected, setConnected] = useState(false);
