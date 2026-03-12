@@ -177,23 +177,54 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
     }
 
     setLoadingUrl(true);
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
-      const cleanText = text.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    
+    const stripHtml = (html: string) =>
+      html
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
         .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
         .replace(/<[^>]+>/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
-      const parsedUrl = new URL(url);
-      await addDocument({ name: parsedUrl.hostname + parsedUrl.pathname, source: 'url', type: 'text', content: cleanText });
-      toast({ title: 'Conținut website încărcat', description: url });
-      setUrlInput('');
+
+    const tryDirectFetch = async (): Promise<string> => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.text();
+    };
+
+    const tryProxyFetch = async (): Promise<string> => {
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+      const res = await fetch(proxyUrl);
+      if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
+      return res.text();
+    };
+
+    try {
+      let rawHtml: string;
+      try {
+        rawHtml = await tryDirectFetch();
+      } catch {
+        // Direct fetch blocked by CORS — try proxy
+        rawHtml = await tryProxyFetch();
+      }
+      
+      const cleanText = stripHtml(rawHtml);
+      if (!cleanText || cleanText.length < 20) {
+        toast({
+          title: 'Conținut insuficient',
+          description: 'Pagina nu conține text util. Poate fi o aplicație SPA. Salvați pagina (Ctrl+S) și încărcați fișierul.',
+          variant: 'destructive',
+        });
+      } else {
+        const parsedUrl = new URL(url);
+        await addDocument({ name: parsedUrl.hostname + parsedUrl.pathname, source: 'url', type: 'text', content: cleanText });
+        toast({ title: 'Conținut website încărcat', description: url });
+        setUrlInput('');
+      }
     } catch {
       toast({
         title: 'Nu s-a putut accesa URL-ul',
-        description: 'CORS blochează accesul direct. Salvați pagina (Ctrl+S) și încărcați-o cu butonul "Fișiere" sau "Folder".',
+        description: 'Serverul nu permite accesul. Salvați pagina (Ctrl+S) și încărcați-o cu butonul "Fișiere" sau "Folder".',
         variant: 'destructive',
       });
     }
