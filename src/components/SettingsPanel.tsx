@@ -401,6 +401,88 @@ export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigCh
             )}
           </div>
 
+          {/* App Customization */}
+          <div className="border-t border-border pt-4 space-y-3">
+            <h3 className="font-mono text-sm font-semibold text-foreground flex items-center gap-2">
+              <Palette className="h-4 w-4" />
+              Personalizare aplicație
+            </h3>
+
+            <div>
+              <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                <Type className="h-3 w-3" /> Numele aplicației
+              </Label>
+              <Input
+                value={appConfig.appName}
+                onChange={(e) => {
+                  const updated = { ...appConfig, appName: e.target.value };
+                  saveAppConfig(updated);
+                  onAppConfigChange(updated);
+                }}
+                placeholder="DocBot"
+                className="mt-1 h-9 font-mono text-xs bg-muted border-border"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                <Palette className="h-3 w-3" /> Fundal (HSL)
+              </Label>
+              <div className="flex gap-2 mt-1 items-center">
+                <Input
+                  value={appConfig.backgroundHsl}
+                  onChange={(e) => {
+                    const updated = { ...appConfig, backgroundHsl: e.target.value };
+                    saveAppConfig(updated);
+                    onAppConfigChange(updated);
+                  }}
+                  placeholder="220 20% 7%"
+                  className="h-9 font-mono text-xs bg-muted border-border"
+                />
+                <div
+                  className="h-9 w-9 rounded border border-border shrink-0"
+                  style={{ backgroundColor: `hsl(${appConfig.backgroundHsl})` }}
+                />
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">Format: hue saturation% lightness% (ex: 220 20% 7%)</p>
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                <KeyRound className="h-3 w-3" /> Schimbă parola admin
+              </Label>
+              <div className="flex gap-2 mt-1">
+                <Input
+                  type="password"
+                  placeholder="Parolă nouă"
+                  id="new-admin-password"
+                  className="h-9 font-mono text-xs bg-muted border-border"
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={async () => {
+                    const input = document.getElementById('new-admin-password') as HTMLInputElement;
+                    const val = input?.value?.trim();
+                    if (!val || val.length < 4) {
+                      toast({ title: 'Parola trebuie să aibă minim 4 caractere', variant: 'destructive' });
+                      return;
+                    }
+                    const hash = await hashPassword(val);
+                    const updated = { ...appConfig, adminPasswordHash: hash };
+                    saveAppConfig(updated);
+                    onAppConfigChange(updated);
+                    input.value = '';
+                    toast({ title: 'Parolă schimbată cu succes' });
+                  }}
+                >
+                  Salvează
+                </Button>
+              </div>
+            </div>
+          </div>
+
           <Button variant="secondary" size="sm" className="w-full" onClick={() => setOpen(false)}>
             <Check className="h-3.5 w-3.5 mr-1.5" /> Gata
           </Button>
