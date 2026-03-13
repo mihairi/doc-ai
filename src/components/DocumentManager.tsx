@@ -192,20 +192,48 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
       return res.text();
     };
 
-    const tryProxyFetch = async (): Promise<string> => {
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-      const res = await fetch(proxyUrl);
-      if (!res.ok) throw new Error(`Proxy HTTP ${res.status}`);
-      return res.text();
-    };
+    const proxyFetchers = [
+      async (): Promise<string> => {
+        const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`);
+        if (!res.ok) throw new Error(`AllOrigins ${res.status}`);
+        return res.text();
+      },
+      async (): Promise<string> => {
+        const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`);
+        if (!res.ok) throw new Error(`CodeTabs ${res.status}`);
+        return res.text();
+      },
+      async (): Promise<string> => {
+        const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`);
+        if (!res.ok) throw new Error(`CorsProxy.io ${res.status}`);
+        return res.text();
+      },
+    ];
 
     try {
-      let rawHtml: string;
+      let rawHtml: string | null = null;
+      
+      // Try direct fetch first
       try {
         rawHtml = await tryDirectFetch();
       } catch {
-        // Direct fetch blocked by CORS — try proxy
-        rawHtml = await tryProxyFetch();
+        // Direct fetch blocked by CORS — try proxies
+      }
+
+      // Try each proxy until one works
+      if (!rawHtml) {
+        for (const proxyFetch of proxyFetchers) {
+          try {
+            rawHtml = await proxyFetch();
+            if (rawHtml) break;
+          } catch (err) {
+            console.warn('Proxy failed:', err);
+          }
+        }
+      }
+
+      if (!rawHtml) {
+        throw new Error('All fetch methods failed');
       }
       
       const cleanText = stripHtml(rawHtml);
