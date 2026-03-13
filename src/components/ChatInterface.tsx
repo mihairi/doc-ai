@@ -115,8 +115,8 @@ ${chunks}`;
       if (serverMode) {
         // Use LlamaIndex server for retrieval
         systemPrompt = await buildContextFromServer(text);
-        if (!systemPrompt) {
-          systemPrompt = 'Nu s-au găsit documente relevante pe server. Informează utilizatorul.';
+      if (!systemPrompt) {
+          systemPrompt = 'Nu s-au găsit documente relevante. Răspunde EXACT cu: "Nu am găsit această informație în documentele disponibile." și nimic altceva.';
         }
       } else {
         // Fallback to local documents
