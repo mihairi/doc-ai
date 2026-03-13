@@ -142,50 +142,7 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
     if (folderInputRef.current) folderInputRef.current.value = '';
   };
 
-  const handleUrlFetch = async () => {
-    const url = urlInput.trim();
-    if (!url) return;
-
-    try {
-      const parsed = new URL(url);
-      if (!['http:', 'https:'].includes(parsed.protocol)) {
-        toast({
-          title: 'Protocol invalid',
-          description: 'Doar URL-uri HTTP/HTTPS sunt acceptate.',
-          variant: 'destructive',
-        });
-        return;
-      }
-      const blockedHosts = ['localhost', '127.0.0.1', '0.0.0.0', '[::1]'];
-      const hostname = parsed.hostname.toLowerCase();
-      const isPrivateIP = /^(10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+)$/.test(hostname);
-      if (blockedHosts.includes(hostname) || isPrivateIP) {
-        toast({
-          title: 'URL blocat',
-          description: 'Accesul la adrese locale sau de rețea internă nu este permis.',
-          variant: 'destructive',
-        });
-        return;
-      }
-    } catch {
-      toast({
-        title: 'URL invalid',
-        description: 'Introduceți un URL valid (ex: https://example.com).',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setLoadingUrl(true);
-    
-    const stripHtml = (html: string) =>
-      html
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
+  const fetchPageContent = async (url: string): Promise<string | null> => {
     const tryDirectFetch = async (): Promise<string> => {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -211,42 +168,129 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
     ];
 
     try {
-      let rawHtml: string | null = null;
-      
-      // Try direct fetch first
+      return await tryDirectFetch();
+    } catch {}
+
+    for (const proxyFetch of proxyFetchers) {
       try {
-        rawHtml = await tryDirectFetch();
-      } catch {
-        // Direct fetch blocked by CORS — try proxies
+        const html = await proxyFetch();
+        if (html) return html;
+      } catch (err) {
+        console.warn('Proxy failed:', err);
+      }
+    }
+    return null;
+  };
+
+  const extractLinks = (html: string, baseUrl: string): string[] => {
+    try {
+      const base = new URL(baseUrl);
+      const linkRegex = /href=["']([^"'#]+)["']/gi;
+      const links = new Set<string>();
+      let match;
+      while ((match = linkRegex.exec(html)) !== null) {
+        try {
+          const resolved = new URL(match[1], baseUrl);
+          // Only same-domain links
+          if (resolved.hostname === base.hostname && 
+              resolved.protocol.startsWith('http') &&
+              !resolved.pathname.match(/\.(jpg|jpeg|png|gif|svg|css|js|ico|woff|woff2|ttf|eot|mp4|mp3|zip|gz|tar|rar)$/i)) {
+            // Remove hash and normalize
+            resolved.hash = '';
+            links.add(resolved.href);
+          }
+        } catch {}
+      }
+      // Remove the base URL itself
+      links.delete(new URL(baseUrl).href);
+      return Array.from(links);
+    } catch {
+      return [];
+    }
+  };
+
+  const handleUrlFetch = async () => {
+    const url = urlInput.trim();
+    if (!url) return;
+
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        toast({ title: 'Protocol invalid', description: 'Doar URL-uri HTTP/HTTPS sunt acceptate.', variant: 'destructive' });
+        return;
+      }
+      const blockedHosts = ['localhost', '127.0.0.1', '0.0.0.0', '[::1]'];
+      const hostname = parsed.hostname.toLowerCase();
+      const isPrivateIP = /^(10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+)$/.test(hostname);
+      if (blockedHosts.includes(hostname) || isPrivateIP) {
+        toast({ title: 'URL blocat', description: 'Accesul la adrese locale sau de rețea internă nu este permis.', variant: 'destructive' });
+        return;
+      }
+    } catch {
+      toast({ title: 'URL invalid', description: 'Introduceți un URL valid (ex: https://example.com).', variant: 'destructive' });
+      return;
+    }
+
+    setLoadingUrl(true);
+    
+    const stripHtml = (html: string) =>
+      html
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    try {
+      // Fetch main page
+      const mainHtml = await fetchPageContent(url);
+      if (!mainHtml) {
+        throw new Error('All fetch methods failed');
       }
 
-      // Try each proxy until one works
-      if (!rawHtml) {
-        for (const proxyFetch of proxyFetchers) {
-          try {
-            rawHtml = await proxyFetch();
-            if (rawHtml) break;
-          } catch (err) {
-            console.warn('Proxy failed:', err);
+      const mainText = stripHtml(mainHtml);
+      if (!mainText || mainText.length < 20) {
+        toast({
+          title: 'Conținut insuficient',
+          description: 'Pagina nu conține text util. Salvați pagina (Ctrl+S) și încărcați fișierul.',
+          variant: 'destructive',
+        });
+        setLoadingUrl(false);
+        return;
+      }
+
+      // Save main page with original URL as name
+      const docsToAdd: Omit<DocEntry, 'id' | 'addedAt'>[] = [];
+      docsToAdd.push({ name: url, source: 'url', type: 'text', content: mainText });
+
+      // Extract and crawl sub-links (same domain)
+      const subLinks = extractLinks(mainHtml, url);
+      const MAX_SUB_PAGES = 20;
+      const linksToFetch = subLinks.slice(0, MAX_SUB_PAGES);
+      
+      if (linksToFetch.length > 0) {
+        toast({ title: 'Se încarcă sub-paginile...', description: `Se procesează ${linksToFetch.length} pagini legate.` });
+        
+        const results = await Promise.allSettled(
+          linksToFetch.map(async (linkUrl) => {
+            const html = await fetchPageContent(linkUrl);
+            if (!html) return null;
+            const text = stripHtml(html);
+            if (!text || text.length < 20) return null;
+            return { name: linkUrl, source: 'url' as const, type: 'text' as DocType, content: text };
+          })
+        );
+
+        for (const result of results) {
+          if (result.status === 'fulfilled' && result.value) {
+            docsToAdd.push(result.value);
           }
         }
       }
 
-      if (!rawHtml) {
-        throw new Error('All fetch methods failed');
-      }
-      
-      const cleanText = stripHtml(rawHtml);
-      if (!cleanText || cleanText.length < 20) {
-        toast({
-          title: 'Conținut insuficient',
-          description: 'Pagina nu conține text util. Poate fi o aplicație SPA. Salvați pagina (Ctrl+S) și încărcați fișierul.',
-          variant: 'destructive',
-        });
-      } else {
-        const parsedUrl = new URL(url);
-        await addDocument({ name: parsedUrl.hostname + parsedUrl.pathname, source: 'url', type: 'text', content: cleanText });
-        toast({ title: 'Conținut website încărcat', description: url });
+      if (docsToAdd.length > 0) {
+        const added = await addDocuments(docsToAdd);
+        toast({ title: `${added} pagini încărcate`, description: `Pagina principală + ${added - 1} sub-pagini de pe ${new URL(url).hostname}` });
         setUrlInput('');
       }
     } catch {
