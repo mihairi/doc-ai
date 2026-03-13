@@ -53,8 +53,15 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
         const page = r.metadata?.page_label || r.metadata?.page || '';
         const section = r.metadata?.section || r.metadata?.header || '';
         const url = r.metadata?.url || r.metadata?.source_url || '';
-        // Build a clickable file URL via the file server
-        let fileUrl = r.metadata?.file_url ? `${fsBaseUrl}${r.metadata.file_url}` : url;
+        // For web URLs, use the original URL directly; for local files, use file server
+        let fileUrl = '';
+        if (url && url.startsWith('http') && !url.includes('localhost') && !url.includes('127.0.0.1')) {
+          fileUrl = url;
+        } else if (r.metadata?.file_url) {
+          fileUrl = `${fsBaseUrl}${r.metadata.file_url}`;
+        } else if (url) {
+          fileUrl = url;
+        }
         // Ensure PDF page anchor is present even if server didn't add it
         if (page && fileUrl && fileUrl.toLowerCase().includes('.pdf') && !fileUrl.includes('#page=')) {
           fileUrl += `#page=${page}`;
