@@ -26,6 +26,8 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [usingServer, setUsingServer] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
