@@ -183,10 +183,7 @@ ${chunks}`;
         onDelta: upsert,
         onDone: () => {
           setIsStreaming(false);
-          if (assistantSoFar.trim()) {
-            // Cache successful response
-            responseCache.set(key, assistantSoFar);
-          } else {
+          if (!assistantSoFar.trim()) {
             setMessages(prev => [...prev, { role: 'assistant', content: 'Nu am primit răspuns de la model. Verificați conexiunea la LLM și modelul selectat.' }]);
           }
         },
