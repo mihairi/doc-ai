@@ -19,6 +19,12 @@ interface ChatInterfaceProps {
   documents: DocEntry[];
 }
 
+// Simple response cache
+const responseCache = new Map<string, string>();
+function cacheKey(question: string, docCount: number): string {
+  return question.trim().toLowerCase().replace(/\s+/g, ' ') + '::' + docCount;
+}
+
 export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
@@ -114,6 +120,15 @@ ${chunks}`;
     const userMsg: DisplayMessage = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
+
+    // Check cache first
+    const key = cacheKey(text, documents.length);
+    const cached = responseCache.get(key);
+    if (cached) {
+      setMessages(prev => [...prev, { role: 'assistant', content: cached }]);
+      return;
+    }
+
     setIsStreaming(true);
 
     let systemPrompt: string;
@@ -177,7 +192,10 @@ ${chunks}`;
         onDelta: upsert,
         onDone: () => {
           setIsStreaming(false);
-          if (!assistantSoFar.trim()) {
+          if (assistantSoFar.trim()) {
+            // Cache successful response
+            responseCache.set(key, assistantSoFar);
+          } else {
             setMessages(prev => [...prev, { role: 'assistant', content: 'Nu am primit răspuns de la model. Verificați conexiunea la LLM și modelul selectat.' }]);
           }
         },
