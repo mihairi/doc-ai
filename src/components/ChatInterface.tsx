@@ -209,10 +209,22 @@ ${chunks}`;
       e.preventDefault();
       handleSend();
     }
-    if (e.key === 'ArrowUp' && !input) {
+    if (e.key === 'ArrowUp' && commandHistory.length > 0) {
       e.preventDefault();
-      const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
-      if (lastUserMsg) setInput(lastUserMsg.content);
+      const newIndex = historyIndex === -1 ? commandHistory.length - 1 : Math.max(0, historyIndex - 1);
+      setHistoryIndex(newIndex);
+      setInput(commandHistory[newIndex]);
+    }
+    if (e.key === 'ArrowDown' && historyIndex !== -1) {
+      e.preventDefault();
+      const newIndex = historyIndex + 1;
+      if (newIndex >= commandHistory.length) {
+        setHistoryIndex(-1);
+        setInput('');
+      } else {
+        setHistoryIndex(newIndex);
+        setInput(commandHistory[newIndex]);
+      }
     }
   };
 
