@@ -19,11 +19,6 @@ interface ChatInterfaceProps {
   documents: DocEntry[];
 }
 
-// Simple response cache
-const responseCache = new Map<string, string>();
-function cacheKey(question: string, docCount: number): string {
-  return question.trim().toLowerCase().replace(/\s+/g, ' ') + '::' + docCount;
-}
 
 export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -31,6 +26,8 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [usingServer, setUsingServer] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -119,15 +116,9 @@ ${chunks}`;
 
     const userMsg: DisplayMessage = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
+    setCommandHistory(prev => [...prev, text]);
+    setHistoryIndex(-1);
     setInput('');
-
-    // Check cache first
-    const key = cacheKey(text, documents.length);
-    const cached = responseCache.get(key);
-    if (cached) {
-      setMessages(prev => [...prev, { role: 'assistant', content: cached }]);
-      return;
-    }
 
     setIsStreaming(true);
 
@@ -192,10 +183,7 @@ ${chunks}`;
         onDelta: upsert,
         onDone: () => {
           setIsStreaming(false);
-          if (assistantSoFar.trim()) {
-            // Cache successful response
-            responseCache.set(key, assistantSoFar);
-          } else {
+          if (!assistantSoFar.trim()) {
             setMessages(prev => [...prev, { role: 'assistant', content: 'Nu am primit răspuns de la model. Verificați conexiunea la LLM și modelul selectat.' }]);
           }
         },
@@ -221,10 +209,22 @@ ${chunks}`;
       e.preventDefault();
       handleSend();
     }
-    if (e.key === 'ArrowUp' && !input) {
+    if (e.key === 'ArrowUp' && commandHistory.length > 0) {
       e.preventDefault();
-      const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
-      if (lastUserMsg) setInput(lastUserMsg.content);
+      const newIndex = historyIndex === -1 ? commandHistory.length - 1 : Math.max(0, historyIndex - 1);
+      setHistoryIndex(newIndex);
+      setInput(commandHistory[newIndex]);
+    }
+    if (e.key === 'ArrowDown' && historyIndex !== -1) {
+      e.preventDefault();
+      const newIndex = historyIndex + 1;
+      if (newIndex >= commandHistory.length) {
+        setHistoryIndex(-1);
+        setInput('');
+      } else {
+        setHistoryIndex(newIndex);
+        setInput(commandHistory[newIndex]);
+      }
     }
   };
 
