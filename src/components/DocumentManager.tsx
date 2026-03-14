@@ -263,36 +263,57 @@ export function DocumentManager({ documents, onDocumentsChange }: DocumentManage
       const docsToAdd: Omit<DocEntry, 'id' | 'addedAt'>[] = [];
       docsToAdd.push({ name: url, source: 'url', type: 'text', content: mainText });
 
-      // Extract and crawl sub-links (same domain)
-      const subLinks = extractLinks(mainHtml, url);
-      const MAX_SUB_PAGES = 20;
-      const linksToFetch = subLinks.slice(0, MAX_SUB_PAGES);
-      
-      if (linksToFetch.length > 0) {
-        toast({ title: 'Se încarcă sub-paginile...', description: `Se procesează ${linksToFetch.length} pagini legate.` });
-        
+      // Save main page immediately
+      const mainAdded = await addDocuments(docsToAdd);
+      let totalAdded = mainAdded;
+
+      // Recursive crawl: process ALL links in batches of 20
+      const visited = new Set<string>([url]);
+      let queue = extractLinks(mainHtml, url).filter(l => !visited.has(l));
+      queue.forEach(l => visited.add(l));
+      let batchNum = 0;
+
+      while (queue.length > 0) {
+        const batch = queue.splice(0, 20);
+        batchNum++;
+        toast({ title: 'Se încarcă sub-paginile...', description: `Lot ${batchNum}: ${batch.length} pagini (${totalAdded} încărcate, ${queue.length} în așteptare)` });
+
+        const batchDocs: Omit<DocEntry, 'id' | 'addedAt'>[] = [];
         const results = await Promise.allSettled(
-          linksToFetch.map(async (linkUrl) => {
+          batch.map(async (linkUrl) => {
             const html = await fetchPageContent(linkUrl);
             if (!html) return null;
             const text = stripHtml(html);
-            if (!text || text.length < 20) return null;
-            return { name: linkUrl, source: 'url' as const, type: 'text' as DocType, content: text };
+            if (!text || text.length < 20) return { text: null, html, linkUrl };
+            return { text, html, linkUrl };
           })
         );
 
         for (const result of results) {
           if (result.status === 'fulfilled' && result.value) {
-            docsToAdd.push(result.value);
+            const { text, html, linkUrl } = result.value;
+            if (text) {
+              batchDocs.push({ name: linkUrl, source: 'url' as const, type: 'text' as DocType, content: text });
+            }
+            // Discover new links from this page
+            if (html) {
+              const newLinks = extractLinks(html, url).filter(l => !visited.has(l));
+              for (const nl of newLinks) {
+                visited.add(nl);
+                queue.push(nl);
+              }
+            }
           }
+        }
+
+        if (batchDocs.length > 0) {
+          const added = await addDocuments(batchDocs);
+          totalAdded += added;
         }
       }
 
-      if (docsToAdd.length > 0) {
-        const added = await addDocuments(docsToAdd);
-        toast({ title: `${added} pagini încărcate`, description: `Pagina principală + ${added - 1} sub-pagini de pe ${new URL(url).hostname}` });
-        setUrlInput('');
-      }
+      toast({ title: `${totalAdded} pagini încărcate`, description: `Toate paginile de pe ${new URL(url).hostname}` });
+      setUrlInput('');
     } catch {
       toast({
         title: 'Nu s-a putut accesa URL-ul',
