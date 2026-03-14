@@ -216,10 +216,15 @@ ${chunks}`;
     setIsStreaming(false);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+    if (e.key === 'ArrowUp' && !input) {
+      e.preventDefault();
+      const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+      if (lastUserMsg) setInput(lastUserMsg.content);
     }
   };
 
