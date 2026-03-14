@@ -116,6 +116,8 @@ ${chunks}`;
 
     const userMsg: DisplayMessage = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
+    setCommandHistory(prev => [...prev, text]);
+    setHistoryIndex(-1);
     setInput('');
 
     // Check cache first
