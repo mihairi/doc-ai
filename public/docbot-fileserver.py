@@ -22,6 +22,41 @@ import argparse
 import threading
 from pathlib import Path
 
+from typing import Any, List
+from llama_index.core.embeddings import BaseEmbedding
+from openai import OpenAI
+
+class LMStudioEmbedding(BaseEmbedding):
+    def __init__(self, model_name: str, base_url: str, **kwargs: Any):
+        super().__init__(model_name=model_name, **kwargs)
+        self._client = OpenAI(base_url=base_url, api_key="lm-studio")
+
+    def _get_query_embedding(self, query: str) -> List[float]:
+        """Obține embedding-ul pentru o întrebare."""
+        return self._client.embeddings.create(
+            input=[query], model=self.model_name
+        ).data[0].embedding
+
+    def _get_text_embedding(self, text: str) -> List[float]:
+        """Obține embedding-ul pentru un document (chunk)."""
+        return self._client.embeddings.create(
+            input=[text], model=self.model_name
+        ).data[0].embedding
+
+    async def _aget_query_embedding(self, query: str) -> List[float]:
+        return self._get_query_embedding(query)
+
+    async def _aget_text_embedding(self, text: str) -> List[float]:
+        return self._get_text_embedding(text)
+        
+custom_embed_model = LMStudioEmbedding(
+    #model_name="text-embedding-granite-embedding-278m-multilingual",
+    #model_name="text-embedding-rgveda-embedding-gemma",
+    #model_name="text-embedding-nomic-embed-text-v2-moe",
+    model_name="text-embedding-embedding-gemma-300m",
+    base_url="http://localhost:1234/v1",
+)
+  
 try:
     from flask import Flask, request, jsonify
     from flask_cors import CORS
@@ -38,7 +73,7 @@ try:
         StorageContext,
         load_index_from_storage,
     )
-    from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+    #from llama_index.embeddings.huggingface import HuggingFaceEmbedding
     HAS_LLAMA = True
 except ImportError:
     HAS_LLAMA = False
@@ -51,7 +86,6 @@ CORS(app, origins=[
     "http://localhost:5174", "http://127.0.0.1:5174",
     "http://localhost:3000", "http://127.0.0.1:3000",
     "http://localhost:8080", "http://127.0.0.1:8080",
-    "https://id-preview--294c8387-4500-4536-8018-27cc834cbe4a.lovable.app",
 ])
 
 # Global state
@@ -73,7 +107,8 @@ def _do_index():
         _index_progress = {"phase": "loading_model", "current": 0, "total": 0}
         print(f"[DocBot] Indexing {len(_folders)} folder(s)...")
 
-        Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+        #Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-m3")
+        Settings.embed_model = custom_embed_model
         Settings.llm = None
 
         _index_progress = {"phase": "reading_files", "current": 0, "total": len(_folders)}
@@ -260,7 +295,8 @@ def main():
     if HAS_LLAMA and Path(_persist_dir).exists():
         try:
             print("[DocBot] Loading persisted index...")
-            Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+            #Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-m3")
+            Settings.embed_model = custom_embed_model              
             Settings.llm = None
             storage_context = StorageContext.from_defaults(persist_dir=_persist_dir)
             _index = load_index_from_storage(storage_context)
