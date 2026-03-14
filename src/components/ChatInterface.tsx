@@ -248,8 +248,9 @@ ${chunks}`;
                     remarkPlugins={[remarkGfm]}
                     components={{
                       a: ({ href, children }) => (
-                        <a href={href} target="_blank" rel="noopener noreferrer">
+                        <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary font-medium underline underline-offset-2 decoration-primary/50 hover:decoration-primary hover:text-primary/80 transition-colors inline-flex items-center gap-0.5">
                           {children}
+                          <svg className="inline-block w-3 h-3 ml-0.5 shrink-0" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.5 3C3.5 3 8.5 3 9 3C9 3.5 9 8.5 9 8.5M9 3L3 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                         </a>
                       ),
                     }}
