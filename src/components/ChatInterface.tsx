@@ -120,6 +120,15 @@ ${chunks}`;
     const userMsg: DisplayMessage = { role: 'user', content: text };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
+
+    // Check cache first
+    const key = cacheKey(text, documents.length);
+    const cached = responseCache.get(key);
+    if (cached) {
+      setMessages(prev => [...prev, { role: 'assistant', content: cached }]);
+      return;
+    }
+
     setIsStreaming(true);
 
     let systemPrompt: string;
