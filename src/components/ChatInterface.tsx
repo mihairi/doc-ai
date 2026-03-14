@@ -19,6 +19,12 @@ interface ChatInterfaceProps {
   documents: DocEntry[];
 }
 
+// Simple response cache
+const responseCache = new Map<string, string>();
+function cacheKey(question: string, docCount: number): string {
+  return question.trim().toLowerCase().replace(/\s+/g, ' ') + '::' + docCount;
+}
+
 export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
