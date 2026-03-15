@@ -99,32 +99,6 @@ _index_error = None
 _persist_dir = ".docbot-index"
 _index_progress = {"phase": "", "current": 0, "total": 0}
 
-# LLM config (LM Studio)
-_llm_config = {
-    "enabled": False,
-    "base_url": "http://localhost:1234/v1",
-    "model": "",
-}
-_llm_config_file = ".docbot-llm-config.json"
-
-
-def _load_llm_config():
-    global _llm_config
-    try:
-        if Path(_llm_config_file).exists():
-            with open(_llm_config_file) as f:
-                _llm_config.update(json.load(f))
-    except Exception as e:
-        print(f"[DocBot] Could not load LLM config: {e}")
-
-
-def _save_llm_config():
-    try:
-        with open(_llm_config_file, "w") as f:
-            json.dump(_llm_config, f, indent=2)
-    except Exception as e:
-        print(f"[DocBot] Could not save LLM config: {e}")
-
 
 def _do_index():
     global _index, _indexing, _last_indexed, _doc_count, _index_error, _index_progress
@@ -249,76 +223,6 @@ def serve_file():
     return send_file(str(resolved))
 
 
-@app.route("/api/llm-config", methods=["GET"])
-def get_llm_config():
-    return jsonify(_llm_config)
-
-
-@app.route("/api/llm-config", methods=["POST"])
-def set_llm_config():
-    global _llm_config
-    data = request.get_json() or {}
-    _llm_config["enabled"] = bool(data.get("enabled", False))
-    _llm_config["base_url"] = data.get("base_url", _llm_config["base_url"])
-    _llm_config["model"] = data.get("model", _llm_config["model"])
-    _save_llm_config()
-    return jsonify({"status": "ok", "config": _llm_config})
-
-
-@app.route("/api/llm-models", methods=["GET"])
-def list_llm_models():
-    """List available models from the configured LM Studio server."""
-    try:
-        import requests as req_lib
-        base = _llm_config.get("base_url", "http://localhost:1234/v1").rstrip("/")
-        resp = req_lib.get(f"{base}/models", timeout=5)
-        if resp.ok:
-            data = resp.json()
-            models = [m.get("id", "") for m in data.get("data", [])]
-            return jsonify({"models": models})
-        return jsonify({"models": [], "error": f"Status {resp.status_code}"}), 200
-    except Exception as e:
-        return jsonify({"models": [], "error": str(e)}), 200
-
-
-def _rewrite_query(question: str) -> dict:
-    """Use the configured local LLM to rewrite the query for better retrieval.
-    Returns {"original": str, "rewritten": str, "used_llm": bool}."""
-    if not _llm_config.get("enabled") or not _llm_config.get("model"):
-        return {"original": question, "rewritten": question, "used_llm": False}
-
-    try:
-        client = OpenAI(
-            base_url=_llm_config.get("base_url", "http://localhost:1234/v1"),
-            api_key="lm-studio",
-        )
-        resp = client.chat.completions.create(
-            model=_llm_config["model"],
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a query rewriting assistant. Your job is to reformulate "
-                        "the user's question into a better search query for semantic document retrieval. "
-                        "Output ONLY the rewritten query, nothing else. Keep the same language as the input. "
-                        "Make it more specific, expand abbreviations, and add relevant synonyms or context."
-                    ),
-                },
-                {"role": "user", "content": question},
-            ],
-            max_tokens=200,
-            temperature=0.3,
-        )
-        rewritten = resp.choices[0].message.content.strip()
-        if rewritten:
-            print(f"[DocBot] Query rewrite: '{question}' → '{rewritten}'")
-            return {"original": question, "rewritten": rewritten, "used_llm": True}
-    except Exception as e:
-        print(f"[DocBot] Query rewrite failed (falling back to original): {e}")
-
-    return {"original": question, "rewritten": question, "used_llm": False}
-
-
 @app.route("/api/query", methods=["POST"])
 def query():
     if not HAS_LLAMA:
@@ -334,13 +238,9 @@ def query():
         return jsonify({"error": "Missing 'question' field"}), 400
 
     try:
-        # Rewrite query using local LLM if configured
-        qr = _rewrite_query(question)
-        search_query = qr["rewritten"]
-
         with _index_lock:
             retriever = _index.as_retriever(similarity_top_k=top_k)
-            nodes = retriever.retrieve(search_query)
+            nodes = retriever.retrieve(question)
 
         results = []
         for node in nodes:
@@ -367,10 +267,7 @@ def query():
                 "score": float(node.get_score()) if node.get_score() is not None else 0,
                 "metadata": meta,
             })
-        return jsonify({
-            "results": results,
-            "query_rewrite": qr,
-        })
+        return jsonify({"results": results})
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -384,8 +281,6 @@ def main():
     parser.add_argument("--folders", type=str, required=True,
                         help="Comma-separated folder paths")
     args = parser.parse_args()
-
-    _load_llm_config()
 
     _folders = [f.strip() for f in args.folders.split(",") if f.strip()]
     if not _folders:
