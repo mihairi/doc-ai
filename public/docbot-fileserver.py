@@ -249,6 +249,38 @@ def serve_file():
     return send_file(str(resolved))
 
 
+@app.route("/api/llm-config", methods=["GET"])
+def get_llm_config():
+    return jsonify(_llm_config)
+
+
+@app.route("/api/llm-config", methods=["POST"])
+def set_llm_config():
+    global _llm_config
+    data = request.get_json() or {}
+    _llm_config["enabled"] = bool(data.get("enabled", False))
+    _llm_config["base_url"] = data.get("base_url", _llm_config["base_url"])
+    _llm_config["model"] = data.get("model", _llm_config["model"])
+    _save_llm_config()
+    return jsonify({"status": "ok", "config": _llm_config})
+
+
+@app.route("/api/llm-models", methods=["GET"])
+def list_llm_models():
+    """List available models from the configured LM Studio server."""
+    try:
+        import requests as req_lib
+        base = _llm_config.get("base_url", "http://localhost:1234/v1").rstrip("/")
+        resp = req_lib.get(f"{base}/models", timeout=5)
+        if resp.ok:
+            data = resp.json()
+            models = [m.get("id", "") for m in data.get("data", [])]
+            return jsonify({"models": models})
+        return jsonify({"models": [], "error": f"Status {resp.status_code}"}), 200
+    except Exception as e:
+        return jsonify({"models": [], "error": str(e)}), 200
+
+
 @app.route("/api/query", methods=["POST"])
 def query():
     if not HAS_LLAMA:
