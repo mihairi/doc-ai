@@ -9,12 +9,16 @@ import { LLMConfig, LLMProvider, getDefaultConfig, fetchModels, loadConfig, save
 import {
   FileServerConfig,
   IndexStatus,
+  ServerLLMConfig,
   loadFileServerConfig,
   saveFileServerConfig,
   checkFileServerHealth,
   fetchRemoteFolders,
   fetchIndexStatus,
   triggerIndexing,
+  fetchServerLLMConfig,
+  saveServerLLMConfig,
+  fetchServerLLMModels,
   RemoteFolder,
 } from '@/lib/file-server';
 import { AppConfig, saveAppConfig, hashPassword } from '@/lib/app-config';
