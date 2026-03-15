@@ -50,6 +50,11 @@ export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigCh
   const [indexElapsed, setIndexElapsed] = useState<number>(0);
   const [lastIndexDuration, setLastIndexDuration] = useState<number | null>(null);
 
+  // Server LLM config state
+  const [serverLLM, setServerLLM] = useState<ServerLLMConfig>({ enabled: false, base_url: 'http://localhost:1234/v1', model: '' });
+  const [serverLLMModels, setServerLLMModels] = useState<string[]>([]);
+  const [serverLLMLoading, setServerLLMLoading] = useState(false);
+
   const refreshModels = async () => {
     setLoading(true);
     const found = await fetchModels(config);
