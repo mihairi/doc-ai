@@ -97,3 +97,31 @@ export async function fetchRemoteFolders(url: string): Promise<RemoteFolder[]> {
   const data = await res.json();
   return data.folders || [];
 }
+
+export interface ServerLLMConfig {
+  enabled: boolean;
+  base_url: string;
+  model: string;
+}
+
+export async function fetchServerLLMConfig(url: string): Promise<ServerLLMConfig> {
+  const res = await fetch(`${baseUrl(url)}/api/llm-config`);
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  return res.json();
+}
+
+export async function saveServerLLMConfig(url: string, config: ServerLLMConfig): Promise<void> {
+  const res = await fetch(`${baseUrl(url)}/api/llm-config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+}
+
+export async function fetchServerLLMModels(url: string): Promise<string[]> {
+  const res = await fetch(`${baseUrl(url)}/api/llm-models`);
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  const data = await res.json();
+  return data.models || [];
+}

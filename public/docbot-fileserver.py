@@ -99,6 +99,32 @@ _index_error = None
 _persist_dir = ".docbot-index"
 _index_progress = {"phase": "", "current": 0, "total": 0}
 
+# LLM config (LM Studio)
+_llm_config = {
+    "enabled": False,
+    "base_url": "http://localhost:1234/v1",
+    "model": "",
+}
+_llm_config_file = ".docbot-llm-config.json"
+
+
+def _load_llm_config():
+    global _llm_config
+    try:
+        if Path(_llm_config_file).exists():
+            with open(_llm_config_file) as f:
+                _llm_config.update(json.load(f))
+    except Exception as e:
+        print(f"[DocBot] Could not load LLM config: {e}")
+
+
+def _save_llm_config():
+    try:
+        with open(_llm_config_file, "w") as f:
+            json.dump(_llm_config, f, indent=2)
+    except Exception as e:
+        print(f"[DocBot] Could not save LLM config: {e}")
+
 
 def _do_index():
     global _index, _indexing, _last_indexed, _doc_count, _index_error, _index_progress
