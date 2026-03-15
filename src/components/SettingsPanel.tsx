@@ -87,12 +87,14 @@ export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigCh
     setFsEngine(health.engine);
     if (health.ok) {
       try {
-        const [folders, status] = await Promise.all([
+        const [folders, status, llmCfg] = await Promise.all([
           fetchRemoteFolders(fsConfig.url),
           fetchIndexStatus(fsConfig.url),
+          fetchServerLLMConfig(fsConfig.url).catch(() => null),
         ]);
         setFsFolders(folders);
         setIndexStatus(status);
+        if (llmCfg) setServerLLM(llmCfg);
       } catch {
         setFsFolders([]);
         setIndexStatus(null);
@@ -102,6 +104,30 @@ export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigCh
       setIndexStatus(null);
     }
     setFsChecking(false);
+  };
+
+  const refreshServerLLMModels = async () => {
+    setServerLLMLoading(true);
+    try {
+      const models = await fetchServerLLMModels(fsConfig.url);
+      setServerLLMModels(models);
+      if (models.length > 0 && !serverLLM.model) {
+        const updated = { ...serverLLM, model: models[0] };
+        setServerLLM(updated);
+        await saveServerLLMConfig(fsConfig.url, updated);
+      }
+    } catch {}
+    setServerLLMLoading(false);
+  };
+
+  const updateServerLLM = async (patch: Partial<ServerLLMConfig>) => {
+    const updated = { ...serverLLM, ...patch };
+    setServerLLM(updated);
+    try {
+      await saveServerLLMConfig(fsConfig.url, updated);
+    } catch (err: any) {
+      toast({ title: 'Eroare salvare config LLM', description: err?.message, variant: 'destructive' });
+    }
   };
 
   useEffect(() => {
