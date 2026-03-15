@@ -420,7 +420,51 @@ export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigCh
                   </div>
                 )}
 
-                {!fsConnected && (
+                {/* Server LLM Config */}
+                {fsConnected && (
+                  <div className="space-y-2 border-t border-border pt-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Cpu className="h-3 w-3" /> Model LLM local (LM Studio)
+                      </Label>
+                      <Switch
+                        checked={serverLLM.enabled}
+                        onCheckedChange={(checked) => updateServerLLM({ enabled: checked })}
+                      />
+                    </div>
+                    {serverLLM.enabled && (
+                      <div className="space-y-2">
+                        <div>
+                          <Label className="text-[10px] text-muted-foreground">URL LM Studio</Label>
+                          <Input
+                            value={serverLLM.base_url}
+                            onChange={(e) => updateServerLLM({ base_url: e.target.value })}
+                            placeholder="http://localhost:1234/v1"
+                            className="mt-1 h-8 font-mono text-xs bg-muted border-border"
+                          />
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <Label className="text-[10px] text-muted-foreground">Model</Label>
+                            <Button variant="ghost" size="icon" className="h-5 w-5" onClick={refreshServerLLMModels} disabled={serverLLMLoading}>
+                              <RefreshCw className={`h-3 w-3 ${serverLLMLoading ? 'animate-spin' : ''}`} />
+                            </Button>
+                          </div>
+                          <Select value={serverLLM.model} onValueChange={(v) => updateServerLLM({ model: v })}>
+                            <SelectTrigger className="mt-1 h-8 bg-muted border-border font-mono text-xs">
+                              <SelectValue placeholder={serverLLMModels.length === 0 ? 'Apăsați ↻' : 'Selectați'} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {serverLLMModels.map((m) => (
+                                <SelectItem key={m} value={m} className="font-mono text-xs">{m}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                   <div className="text-[10px] text-muted-foreground bg-muted/50 rounded p-2 space-y-1">
                     <p className="font-semibold">Porniți serverul pe mașina cu Ollama:</p>
                     <code className="block bg-muted rounded px-1.5 py-0.5 text-primary break-all">
