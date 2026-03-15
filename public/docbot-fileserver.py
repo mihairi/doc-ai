@@ -367,7 +367,10 @@ def query():
                 "score": float(node.get_score()) if node.get_score() is not None else 0,
                 "metadata": meta,
             })
-        return jsonify({"results": results})
+        return jsonify({
+            "results": results,
+            "query_rewrite": qr,
+        })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
