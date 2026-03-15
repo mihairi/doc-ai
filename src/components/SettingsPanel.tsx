@@ -465,6 +465,8 @@ export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigCh
                     )}
                   </div>
                 )}
+
+                {!fsConnected && (
                   <div className="text-[10px] text-muted-foreground bg-muted/50 rounded p-2 space-y-1">
                     <p className="font-semibold">Porniți serverul pe mașina cu Ollama:</p>
                     <code className="block bg-muted rounded px-1.5 py-0.5 text-primary break-all">
