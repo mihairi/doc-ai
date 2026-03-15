@@ -281,6 +281,44 @@ def list_llm_models():
         return jsonify({"models": [], "error": str(e)}), 200
 
 
+def _rewrite_query(question: str) -> dict:
+    """Use the configured local LLM to rewrite the query for better retrieval.
+    Returns {"original": str, "rewritten": str, "used_llm": bool}."""
+    if not _llm_config.get("enabled") or not _llm_config.get("model"):
+        return {"original": question, "rewritten": question, "used_llm": False}
+
+    try:
+        client = OpenAI(
+            base_url=_llm_config.get("base_url", "http://localhost:1234/v1"),
+            api_key="lm-studio",
+        )
+        resp = client.chat.completions.create(
+            model=_llm_config["model"],
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a query rewriting assistant. Your job is to reformulate "
+                        "the user's question into a better search query for semantic document retrieval. "
+                        "Output ONLY the rewritten query, nothing else. Keep the same language as the input. "
+                        "Make it more specific, expand abbreviations, and add relevant synonyms or context."
+                    ),
+                },
+                {"role": "user", "content": question},
+            ],
+            max_tokens=200,
+            temperature=0.3,
+        )
+        rewritten = resp.choices[0].message.content.strip()
+        if rewritten:
+            print(f"[DocBot] Query rewrite: '{question}' → '{rewritten}'")
+            return {"original": question, "rewritten": rewritten, "used_llm": True}
+    except Exception as e:
+        print(f"[DocBot] Query rewrite failed (falling back to original): {e}")
+
+    return {"original": question, "rewritten": question, "used_llm": False}
+
+
 @app.route("/api/query", methods=["POST"])
 def query():
     if not HAS_LLAMA:
@@ -296,9 +334,13 @@ def query():
         return jsonify({"error": "Missing 'question' field"}), 400
 
     try:
+        # Rewrite query using local LLM if configured
+        qr = _rewrite_query(question)
+        search_query = qr["rewritten"]
+
         with _index_lock:
             retriever = _index.as_retriever(similarity_top_k=top_k)
-            nodes = retriever.retrieve(question)
+            nodes = retriever.retrieve(search_query)
 
         results = []
         for node in nodes:
