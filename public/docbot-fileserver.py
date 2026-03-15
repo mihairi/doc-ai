@@ -340,6 +340,8 @@ def main():
                         help="Comma-separated folder paths")
     args = parser.parse_args()
 
+    _load_llm_config()
+
     _folders = [f.strip() for f in args.folders.split(",") if f.strip()]
     if not _folders:
         print("Error: No folders specified")
