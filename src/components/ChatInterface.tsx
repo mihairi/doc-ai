@@ -146,7 +146,7 @@ ${chunks}`;
     try {
       if (serverMode) {
         // Use LlamaIndex server for retrieval
-        systemPrompt = await buildContextFromServer(text);
+        systemPrompt = await buildContextFromServer(effectiveQuery);
       if (!systemPrompt) {
           systemPrompt = 'Nu s-au găsit documente relevante. Răspunde EXACT cu: "Nu am găsit această informație în documentele disponibile." și nimic altceva.';
         }
