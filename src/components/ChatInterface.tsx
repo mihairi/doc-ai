@@ -180,16 +180,17 @@ ${chunks}`;
     ];
 
     let assistantSoFar = '';
+    let streamingMsgAdded = false;
     const controller = new AbortController();
     abortRef.current = controller;
 
     const upsert = (chunk: string) => {
       assistantSoFar += chunk;
       setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last?.role === 'assistant' && prev.length > 0 && prev[prev.length - 2]?.content === text) {
+        if (streamingMsgAdded) {
           return prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m);
         }
+        streamingMsgAdded = true;
         return [...prev, { role: 'assistant', content: assistantSoFar }];
       });
     };
