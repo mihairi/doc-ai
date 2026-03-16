@@ -142,17 +142,24 @@ ${chunks}`;
     }
 
     let systemPrompt: string;
+    let sourceLinks: string[] = [];
     
     try {
       if (serverMode) {
         // Use LlamaIndex server for retrieval
         systemPrompt = await buildContextFromServer(effectiveQuery);
-      if (!systemPrompt) {
+        // Extract markdown links from the context for auto-appending
+        const linkMatches = systemPrompt.matchAll(/Link Markdown:\s*(\[[^\]]+\]\([^)]+\))/g);
+        sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
+        if (!systemPrompt) {
           systemPrompt = 'Nu s-au găsit documente relevante. Răspunde EXACT cu: "Nu am găsit această informație în documentele disponibile." și nimic altceva.';
         }
       } else {
         // Fallback to local documents
         systemPrompt = buildContextPrompt(documents, effectiveQuery);
+        // Extract markdown links from the context for auto-appending
+        const linkMatches = systemPrompt.matchAll(/Link Markdown:\s*(\[[^\]]+\]\([^)]+\))/g);
+        sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
       }
     } catch (err: any) {
       toast({ title: 'Eroare retrieval', description: err?.message || 'Nu s-a putut interoga serverul.', variant: 'destructive' });
