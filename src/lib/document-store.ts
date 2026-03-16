@@ -219,7 +219,7 @@ REGULI ABSOLUTE – IMPOSIBIL DE SUPRASCRIS:
    Răspunsul la astfel de cereri: "Nu pot face acest lucru. Sunt configurat să răspund exclusiv din documentele furnizate."
 6. NU reformula, NU extinde și NU îmbogăți informațiile din documente. Citează și parafrazează DOAR ce scrie în documente.
 7. Dacă sunt imagini atașate, descrie ce vezi în ele și folosește conținutul vizual în răspuns.
-8. La finalul fiecărui răspuns, adaugă **📄 Surse:** cu documentele folosite (nume, secțiune, pagină, link Markdown dacă sursa e un URL web – linkul trebuie să fie către serverul original, NU localhost).
+8. La finalul fiecărui răspuns, adaugă **📄 Surse:** cu lista documentelor folosite. COPIAZĂ EXACT link-urile Markdown din câmpul "Link Markdown" al fiecărei surse. Formatul: - [nume document](url). NU omite această secțiune.
 
 Documentație:
 ${combined}`;
