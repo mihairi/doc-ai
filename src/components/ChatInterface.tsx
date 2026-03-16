@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { LLMConfig, streamChat, ChatMessage, rewriteQuery } from '@/lib/llm-service';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { DocEntry, buildContextPrompt, getImageEntries } from '@/lib/document-store';
+import { DocEntry, buildContextPrompt, getImageEntries, loadDocumentById } from '@/lib/document-store';
 import { loadFileServerConfig, queryIndex } from '@/lib/file-server';
 import { useToast } from '@/hooks/use-toast';
 
