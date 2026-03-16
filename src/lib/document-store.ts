@@ -244,20 +244,6 @@ export function buildContextPrompt(docs: DocEntry[], question?: string): string 
   const MAX_TOTAL_CHARS = 6000;
   let totalChars = 0;
 
-  // Create blob URLs for local documents so they can be linked
-  const blobUrls = new Map<string, string>();
-  for (const { doc: d } of selectedTextDocs) {
-    if (d.source !== 'url') {
-      try {
-        const mimeType = d.type === 'pdf' ? 'application/pdf' : 'text/plain';
-        const blob = new Blob([d.content], { type: mimeType });
-        blobUrls.set(d.id, URL.createObjectURL(blob));
-      } catch {
-        // skip if blob creation fails
-      }
-    }
-  }
-
   const textSections: string[] = [];
   for (const { doc: d, snippets } of selectedTextDocs) {
     const snippet = snippets.join('\n\n...\n\n').slice(0, 2200);
@@ -272,14 +258,12 @@ export function buildContextPrompt(docs: DocEntry[], question?: string): string 
       docUrl = d.name.startsWith('http') ? d.name : `https://${d.name}`;
       markdownLink = `[${d.name}](${docUrl})`;
     } else {
-      const blobUrl = blobUrls.get(d.id);
-      if (blobUrl) {
-        // Extract page number from snippet if available (PDF)
-        const pageMatch = snippet.match(/\[Pagina\s+(\d+)\]/);
-        const pageNum = pageMatch ? pageMatch[1] : '';
-        docUrl = blobUrl + (pageNum && d.type === 'pdf' ? `#page=${pageNum}` : '');
-        markdownLink = `[${d.name}${pageNum ? ` - pagina ${pageNum}` : ''}](${docUrl})`;
-      }
+      // Use a special docbot-local: scheme that the UI will intercept
+      const pageMatch = snippet.match(/\[Pagina\s+(\d+)\]/);
+      const pageNum = pageMatch ? pageMatch[1] : '';
+      const pageSuffix = pageNum ? `&page=${pageNum}` : '';
+      docUrl = `docbot-local://${d.id}?name=${encodeURIComponent(d.name)}${pageSuffix}`;
+      markdownLink = `[${d.name}${pageNum ? ` - pagina ${pageNum}` : ''}](${docUrl})`;
     }
 
     const sourceInfo = d.source === 'url' ? `(sursă web: ${docUrl})` : `(document local: ${d.name})`;
