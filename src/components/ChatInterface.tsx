@@ -260,7 +260,7 @@ ${chunks}`;
       sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
     }
 
-    const imageEntries = !serverMode ? getImageEntries(documents) : [];
+    const imageEntries = documents.length > 0 ? getImageEntries(documents) : [];
 
     const history: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
