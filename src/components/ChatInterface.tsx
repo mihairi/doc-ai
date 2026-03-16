@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Square, Bot, User, Server } from 'lucide-react';
+import { Send, Square, Bot, User, Server, Sparkles } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { LLMConfig, streamChat, ChatMessage } from '@/lib/llm-service';
+import { LLMConfig, streamChat, ChatMessage, rewriteQuery } from '@/lib/llm-service';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import { DocEntry, buildContextPrompt, getImageEntries } from '@/lib/document-store';
 import { loadFileServerConfig, queryIndex } from '@/lib/file-server';
 import { useToast } from '@/hooks/use-toast';
@@ -28,6 +30,7 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const abortRef = useRef<AbortController | null>(null);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [queryRewrite, setQueryRewrite] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -122,18 +125,34 @@ ${chunks}`;
 
     setIsStreaming(true);
 
+    // Query rewriting
+    let effectiveQuery = text;
+    if (queryRewrite && config.model) {
+      try {
+        effectiveQuery = await rewriteQuery(config, text);
+        if (effectiveQuery !== text) {
+          setMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: `🔄 **Întrebare reformulată:** ${effectiveQuery}` 
+          }]);
+        }
+      } catch {
+        // fallback to original query
+      }
+    }
+
     let systemPrompt: string;
     
     try {
       if (serverMode) {
         // Use LlamaIndex server for retrieval
-        systemPrompt = await buildContextFromServer(text);
+        systemPrompt = await buildContextFromServer(effectiveQuery);
       if (!systemPrompt) {
           systemPrompt = 'Nu s-au găsit documente relevante. Răspunde EXACT cu: "Nu am găsit această informație în documentele disponibile." și nimic altceva.';
         }
       } else {
         // Fallback to local documents
-        systemPrompt = buildContextPrompt(documents, text);
+        systemPrompt = buildContextPrompt(documents, effectiveQuery);
       }
     } catch (err: any) {
       toast({ title: 'Eroare retrieval', description: err?.message || 'Nu s-a putut interoga serverul.', variant: 'destructive' });
@@ -307,7 +326,19 @@ ${chunks}`;
       </div>
 
       {/* Input */}
-      <div className="border-t border-border p-4">
+      <div className="border-t border-border p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <Switch
+            id="query-rewrite"
+            checked={queryRewrite}
+            onCheckedChange={setQueryRewrite}
+            className="scale-75"
+          />
+          <Label htmlFor="query-rewrite" className="text-[11px] text-muted-foreground flex items-center gap-1 cursor-pointer select-none">
+            <Sparkles className="h-3 w-3" />
+            Query Rewriting
+          </Label>
+        </div>
         <div className="flex gap-2 items-end">
           <Textarea
             value={input}

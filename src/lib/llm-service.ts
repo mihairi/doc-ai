@@ -246,6 +246,42 @@ export async function streamChat({
   }
 }
 
+export async function rewriteQuery(config: LLMConfig, query: string): Promise<string> {
+  const base = getBaseUrl(config);
+  const messages = [
+    {
+      role: 'system' as const,
+      content: `Ești un asistent care reformulează întrebări pentru a fi mai clare, mai precise și mai potrivite pentru căutare în documente. Returnează DOAR întrebarea reformulată, fără explicații sau text suplimentar. Păstrează limba originală a întrebării.`,
+    },
+    { role: 'user' as const, content: `Reformulează această întrebare pentru o căutare mai eficientă:\n\n${query}` },
+  ];
+
+  try {
+    if (config.provider === 'ollama') {
+      const res = await fetch(`${base}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: config.model, messages, stream: false }),
+      });
+      if (!res.ok) throw new Error(`Ollama error: ${res.status}`);
+      const data = await res.json();
+      return data.message?.content?.trim() || query;
+    } else {
+      const res = await fetch(`${base}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: config.model, messages, stream: false }),
+      });
+      if (!res.ok) throw new Error(`LM Studio error: ${res.status}`);
+      const data = await res.json();
+      return data.choices?.[0]?.message?.content?.trim() || query;
+    }
+  } catch (e) {
+    console.error('Query rewrite failed:', e);
+    return query;
+  }
+}
+
 export function loadConfig(): LLMConfig {
   try {
     const saved = localStorage.getItem('llm-config');
