@@ -81,6 +81,21 @@ export async function addDocuments(docs: Omit<DocEntry, 'id' | 'addedAt'>[]): Pr
   });
 }
 
+export async function loadDocumentById(id: string): Promise<DocEntry | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.get(id);
+      req.onsuccess = () => resolve((req.result as DocEntry) || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function removeDocument(id: string): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
