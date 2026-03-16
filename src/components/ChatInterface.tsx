@@ -78,6 +78,18 @@ function leaksExternalKnowledge(answer: string): boolean {
   return EXTERNAL_KNOWLEDGE_PATTERNS.some(pattern => normalizedAnswer.includes(normalizeForMatch(pattern)));
 }
 
+function extractSourceReferences(prompt: string): string[] {
+  return [...new Set(
+    prompt
+      .split('\n')
+      .map(line => {
+        const match = line.match(/Link Markdown:\s*(.*?)\s*---\s*$/);
+        return match?.[1]?.trim() || '';
+      })
+      .filter(Boolean)
+  )];
+}
+
 export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
@@ -200,7 +212,7 @@ ${chunks}`;
     }
 
     let systemPrompt: string;
-    let sourceLinks: string[] = [];
+    let sourceReferences: string[] = [];
     let forceNoInfoOnly = false;
 
     try {
@@ -230,8 +242,8 @@ ${chunks}`;
       }
 
       // Combine: use both if available, force no-info only if BOTH have no results
-      const hasServer = serverPromptText && !serverNoInfo;
-      const hasLocal = localPromptText && !localNoInfo;
+      const hasServer = Boolean(serverPromptText) && !serverNoInfo;
+      const hasLocal = Boolean(localPromptText) && !localNoInfo;
 
       if (hasServer && hasLocal) {
         // Merge: extract document chunks from local prompt and append to server prompt
@@ -248,16 +260,14 @@ ${chunks}`;
         systemPrompt = serverPromptText || localPromptText || `Răspunde EXACT cu: "${NO_INFO_RESPONSE}"`;
       }
 
-      const linkMatches = systemPrompt.matchAll(/Link Markdown:\s*(\[[^\]]+\]\([^)]+\))/g);
-      sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
+      sourceReferences = extractSourceReferences(systemPrompt);
     } catch (err: any) {
       toast({ title: 'Eroare retrieval', description: err?.message || 'Eroare la construcția contextului.', variant: 'destructive' });
       const localPrompt = buildContextPrompt(documents, effectiveQuery);
       const stripped = stripStrictMarker(localPrompt);
       systemPrompt = stripped.prompt;
       forceNoInfoOnly = stripped.forceNoInfoOnly;
-      const linkMatches = systemPrompt.matchAll(/Link Markdown:\s*(\[[^\]]+\]\([^)]+\))/g);
-      sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
+      sourceReferences = extractSourceReferences(systemPrompt);
     }
 
     const imageEntries = documents.length > 0 ? getImageEntries(documents) : [];
@@ -303,9 +313,7 @@ ${chunks}`;
             return;
           }
 
-          const shouldForceNoInfo =
-            sourceLinks.length === 0 ||
-            leaksExternalKnowledge(trimmed);
+          const shouldForceNoInfo = leaksExternalKnowledge(trimmed);
 
           if (shouldForceNoInfo) {
             assistantSoFar = NO_INFO_RESPONSE;
@@ -314,8 +322,8 @@ ${chunks}`;
           }
 
           const hasSourcesAlready = assistantSoFar.includes('📄 Surse:') || assistantSoFar.includes('**Surse:**');
-          if (!hasSourcesAlready) {
-            const sourcesSection = '\n\n**📄 Surse:**\n' + sourceLinks.map(l => `- ${l}`).join('\n');
+          if (!hasSourcesAlready && sourceReferences.length > 0) {
+            const sourcesSection = '\n\n**📄 Surse:**\n' + sourceReferences.map(reference => `- ${reference}`).join('\n');
             assistantSoFar += sourcesSection;
             setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
           }
