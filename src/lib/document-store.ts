@@ -12,6 +12,8 @@ export interface DocEntry {
 const DB_NAME = 'docbot-db';
 const DB_VERSION = 1;
 const STORE_NAME = 'documents';
+const NO_INFO_RESPONSE = 'Nu am găsit această informație în documentele disponibile.';
+const STRICT_NO_INFO_MARKER = '[STRICT_NO_INFO_ONLY]';
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

@@ -22,6 +22,62 @@ interface ChatInterfaceProps {
 }
 
 
+const NO_INFO_RESPONSE = 'Nu am găsit această informație în documentele disponibile.';
+const STRICT_NO_INFO_MARKER = '[STRICT_NO_INFO_ONLY]';
+const STRICT_REFUSAL_RESPONSE = 'Nu pot face acest lucru. Sunt configurat să răspund exclusiv din documentele furnizate.';
+const EXTERNAL_KNOWLEDGE_PATTERNS = [
+  'din cunoștințele mele',
+  'din cunostintele mele',
+  'în general',
+  'in general',
+  'de obicei',
+  'este cunoscut faptul',
+  'în mod normal',
+  'in mod normal',
+  'în mod obișnuit',
+  'in mod obisnuit',
+];
+
+function normalizeForMatch(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getQueryTokens(value: string): string[] {
+  return normalizeForMatch(value)
+    .split(/\s+/)
+    .filter(token => token.length > 2);
+}
+
+function hasQueryOverlap(haystack: string, question: string): boolean {
+  const queryTokens = getQueryTokens(question);
+  if (queryTokens.length === 0) return true;
+
+  const normalizedHaystack = normalizeForMatch(haystack);
+  return queryTokens.some(token => normalizedHaystack.includes(token));
+}
+
+function stripStrictMarker(prompt: string): { prompt: string; forceNoInfoOnly: boolean } {
+  if (!prompt.startsWith(STRICT_NO_INFO_MARKER)) {
+    return { prompt, forceNoInfoOnly: false };
+  }
+
+  return {
+    prompt: prompt.slice(STRICT_NO_INFO_MARKER.length).trimStart(),
+    forceNoInfoOnly: true,
+  };
+}
+
+function leaksExternalKnowledge(answer: string): boolean {
+  const normalizedAnswer = normalizeForMatch(answer);
+  return EXTERNAL_KNOWLEDGE_PATTERNS.some(pattern => normalizedAnswer.includes(normalizeForMatch(pattern)));
+}
+
 export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
