@@ -30,6 +30,7 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const abortRef = useRef<AbortController | null>(null);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [queryRewrite, setQueryRewrite] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
