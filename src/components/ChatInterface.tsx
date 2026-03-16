@@ -90,6 +90,39 @@ function extractSourceReferences(prompt: string): string[] {
   )];
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildLocalDocumentViewerHtml(doc: DocEntry, docName: string): string {
+  const title = escapeHtml(docName);
+
+  if (doc.type === 'pdf') {
+    const pageRegex = /\[Pagina\s+(\d+)\]([\s\S]*?)(?=\[Pagina\s+\d+\]|$)/g;
+    const matches = [...doc.content.matchAll(pageRegex)];
+
+    if (matches.length > 0) {
+      const pages = matches
+        .map((match) => {
+          const page = match[1];
+          const content = escapeHtml(match[2].trim());
+          return `<section id="page-${page}" class="doc-page"><h2>Pagina ${page}</h2><pre>${content}</pre></section>`;
+        })
+        .join('');
+
+      return `<!DOCTYPE html><html lang="ro"><head><meta charset="utf-8"><title>${title}</title><style>:root{color-scheme:dark;}body{font-family:ui-sans-serif,system-ui,sans-serif;max-width:960px;margin:0 auto;padding:32px 24px;background:hsl(222 47% 11%);color:hsl(210 40% 98%);line-height:1.6;}h1,h2{margin:0 0 16px;}h1{padding-bottom:12px;border-bottom:1px solid hsl(217 33% 24%);}h2{color:hsl(221 83% 53%);}pre{white-space:pre-wrap;word-break:break-word;background:hsl(222 47% 14%);padding:16px;border-radius:12px;border:1px solid hsl(217 33% 24%);}section{margin-top:28px;scroll-margin-top:24px;}</style></head><body><h1>${title}</h1>${pages}</body></html>`;
+    }
+  }
+
+  const content = escapeHtml(doc.content);
+  return `<!DOCTYPE html><html lang="ro"><head><meta charset="utf-8"><title>${title}</title><style>:root{color-scheme:dark;}body{font-family:ui-sans-serif,system-ui,sans-serif;max-width:960px;margin:0 auto;padding:32px 24px;background:hsl(222 47% 11%);color:hsl(210 40% 98%);line-height:1.6;}h1{margin:0 0 16px;padding-bottom:12px;border-bottom:1px solid hsl(217 33% 24%);}pre{white-space:pre-wrap;word-break:break-word;background:hsl(222 47% 14%);padding:16px;border-radius:12px;border:1px solid hsl(217 33% 24%);}</style></head><body><h1>${title}</h1><pre>${content}</pre></body></html>`;
+}
+
 export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
@@ -412,48 +445,34 @@ ${chunks}`;
                     remarkPlugins={[remarkGfm]}
                     components={{
                       a: ({ href, children }) => {
-                        // Handle local document links
-                        if (href?.startsWith('docbot-local://')) {
+                        if (href?.startsWith('/__docbot_local__/')) {
                           const handleLocalDocClick = async (e: React.MouseEvent) => {
                             e.preventDefault();
                             try {
-                              const url = new URL(href.replace('docbot-local://', 'http://placeholder/'));
-                              const docId = url.hostname;
+                              const url = new URL(href, window.location.origin);
+                              const pathParts = url.pathname.split('/');
+                              const docId = decodeURIComponent(pathParts[pathParts.length - 1] || '');
                               const docName = url.searchParams.get('name') || 'document';
                               const page = url.searchParams.get('page') || '';
-                              
+
                               const doc = await loadDocumentById(docId);
                               if (!doc) {
                                 toast({ title: 'Document negăsit', description: 'Documentul a fost șters din stocarea locală.', variant: 'destructive' });
                                 return;
                               }
 
-                              // Open content in a new window
-                              const newWindow = window.open('', '_blank');
-                              if (newWindow) {
-                                newWindow.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${docName}</title><style>body{font-family:system-ui,sans-serif;max-width:900px;margin:0 auto;padding:2rem;background:#1a1a2e;color:#e0e0e0;line-height:1.6;white-space:pre-wrap;word-wrap:break-word;}h1{color:#7c8cf8;border-bottom:1px solid #333;padding-bottom:0.5rem;}</style></head><body><h1>${docName}${page ? ` — Pagina ${page}` : ''}</h1>${doc.content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</body></html>`);
-                                newWindow.document.close();
-                                // Scroll to page marker if available
-                                if (page) {
-                                  const pageMarker = `[Pagina ${page}]`;
-                                  const idx = doc.content.indexOf(pageMarker);
-                                  if (idx > 0) {
-                                    setTimeout(() => {
-                                      const body = newWindow.document.body;
-                                      const textBefore = doc.content.substring(0, idx);
-                                      const ratio = textBefore.length / doc.content.length;
-                                      body.scrollTop = body.scrollHeight * ratio;
-                                    }, 100);
-                                  }
-                                }
-                              }
+                              const viewerHtml = buildLocalDocumentViewerHtml(doc, docName);
+                              const viewerBlob = new Blob([viewerHtml], { type: 'text/html' });
+                              const viewerUrl = URL.createObjectURL(viewerBlob);
+                              window.open(page ? `${viewerUrl}#page-${page}` : viewerUrl, '_blank', 'noopener,noreferrer');
+                              setTimeout(() => URL.revokeObjectURL(viewerUrl), 60_000);
                             } catch {
                               toast({ title: 'Eroare', description: 'Nu s-a putut deschide documentul.', variant: 'destructive' });
                             }
                           };
 
                           return (
-                            <a href="#" onClick={handleLocalDocClick} className="text-primary font-medium underline underline-offset-2 decoration-primary/50 hover:decoration-primary hover:text-primary/80 transition-colors inline-flex items-center gap-0.5 cursor-pointer">
+                            <a href={href} onClick={handleLocalDocClick} className="text-primary font-medium underline underline-offset-2 decoration-primary/50 hover:decoration-primary hover:text-primary/80 transition-colors inline-flex items-center gap-0.5 cursor-pointer">
                               {children}
                               <svg className="inline-block w-3 h-3 ml-0.5 shrink-0" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.5 3C3.5 3 8.5 3 9 3C9 3.5 9 8.5 9 8.5M9 3L3 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                             </a>
