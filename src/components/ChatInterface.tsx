@@ -313,9 +313,7 @@ ${chunks}`;
             return;
           }
 
-          const shouldForceNoInfo =
-            sourceLinks.length === 0 ||
-            leaksExternalKnowledge(trimmed);
+          const shouldForceNoInfo = leaksExternalKnowledge(trimmed);
 
           if (shouldForceNoInfo) {
             assistantSoFar = NO_INFO_RESPONSE;
@@ -324,8 +322,8 @@ ${chunks}`;
           }
 
           const hasSourcesAlready = assistantSoFar.includes('📄 Surse:') || assistantSoFar.includes('**Surse:**');
-          if (!hasSourcesAlready) {
-            const sourcesSection = '\n\n**📄 Surse:**\n' + sourceLinks.map(l => `- ${l}`).join('\n');
+          if (!hasSourcesAlready && sourceReferences.length > 0) {
+            const sourcesSection = '\n\n**📄 Surse:**\n' + sourceReferences.map(reference => `- ${reference}`).join('\n');
             assistantSoFar += sourcesSection;
             setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
           }
