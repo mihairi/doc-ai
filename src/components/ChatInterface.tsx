@@ -142,17 +142,24 @@ ${chunks}`;
     }
 
     let systemPrompt: string;
+    let sourceLinks: string[] = [];
     
     try {
       if (serverMode) {
         // Use LlamaIndex server for retrieval
         systemPrompt = await buildContextFromServer(effectiveQuery);
-      if (!systemPrompt) {
+        // Extract markdown links from the context for auto-appending
+        const linkMatches = systemPrompt.matchAll(/Link Markdown:\s*(\[[^\]]+\]\([^)]+\))/g);
+        sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
+        if (!systemPrompt) {
           systemPrompt = 'Nu s-au găsit documente relevante. Răspunde EXACT cu: "Nu am găsit această informație în documentele disponibile." și nimic altceva.';
         }
       } else {
         // Fallback to local documents
         systemPrompt = buildContextPrompt(documents, effectiveQuery);
+        // Extract markdown links from the context for auto-appending
+        const linkMatches = systemPrompt.matchAll(/Link Markdown:\s*(\[[^\]]+\]\([^)]+\))/g);
+        sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
       }
     } catch (err: any) {
       toast({ title: 'Eroare retrieval', description: err?.message || 'Nu s-a putut interoga serverul.', variant: 'destructive' });
@@ -205,6 +212,14 @@ ${chunks}`;
           setIsStreaming(false);
           if (!assistantSoFar.trim()) {
             setMessages(prev => [...prev, { role: 'assistant', content: 'Nu am primit răspuns de la model. Verificați conexiunea la LLM și modelul selectat.' }]);
+          } else if (sourceLinks.length > 0) {
+            // Auto-append sources if the LLM didn't include them
+            const hasSourcesAlready = assistantSoFar.includes('📄 Surse:') || assistantSoFar.includes('**Surse:**');
+            if (!hasSourcesAlready) {
+              const sourcesSection = '\n\n**📄 Surse:**\n' + sourceLinks.map(l => `- ${l}`).join('\n');
+              assistantSoFar += sourcesSection;
+              setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
+            }
           }
         },
         onError: (err) => {
