@@ -90,6 +90,39 @@ function extractSourceReferences(prompt: string): string[] {
   )];
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildLocalDocumentViewerHtml(doc: DocEntry, docName: string): string {
+  const title = escapeHtml(docName);
+
+  if (doc.type === 'pdf') {
+    const pageRegex = /\[Pagina\s+(\d+)\]([\s\S]*?)(?=\[Pagina\s+\d+\]|$)/g;
+    const matches = [...doc.content.matchAll(pageRegex)];
+
+    if (matches.length > 0) {
+      const pages = matches
+        .map((match) => {
+          const page = match[1];
+          const content = escapeHtml(match[2].trim());
+          return `<section id="page-${page}" class="doc-page"><h2>Pagina ${page}</h2><pre>${content}</pre></section>`;
+        })
+        .join('');
+
+      return `<!DOCTYPE html><html lang="ro"><head><meta charset="utf-8"><title>${title}</title><style>:root{color-scheme:dark;}body{font-family:ui-sans-serif,system-ui,sans-serif;max-width:960px;margin:0 auto;padding:32px 24px;background:hsl(222 47% 11%);color:hsl(210 40% 98%);line-height:1.6;}h1,h2{margin:0 0 16px;}h1{padding-bottom:12px;border-bottom:1px solid hsl(217 33% 24%);}h2{color:hsl(221 83% 53%);}pre{white-space:pre-wrap;word-break:break-word;background:hsl(222 47% 14%);padding:16px;border-radius:12px;border:1px solid hsl(217 33% 24%);}section{margin-top:28px;scroll-margin-top:24px;}</style></head><body><h1>${title}</h1>${pages}</body></html>`;
+    }
+  }
+
+  const content = escapeHtml(doc.content);
+  return `<!DOCTYPE html><html lang="ro"><head><meta charset="utf-8"><title>${title}</title><style>:root{color-scheme:dark;}body{font-family:ui-sans-serif,system-ui,sans-serif;max-width:960px;margin:0 auto;padding:32px 24px;background:hsl(222 47% 11%);color:hsl(210 40% 98%);line-height:1.6;}h1{margin:0 0 16px;padding-bottom:12px;border-bottom:1px solid hsl(217 33% 24%);}pre{white-space:pre-wrap;word-break:break-word;background:hsl(222 47% 14%);padding:16px;border-radius:12px;border:1px solid hsl(217 33% 24%);}</style></head><body><h1>${title}</h1><pre>${content}</pre></body></html>`;
+}
+
 export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
