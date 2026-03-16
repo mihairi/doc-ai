@@ -204,23 +204,54 @@ ${chunks}`;
     let forceNoInfoOnly = false;
 
     try {
-      if (serverMode) {
-        const serverPrompt = await buildContextFromServer(effectiveQuery);
-        const stripped = stripStrictMarker(serverPrompt);
-        systemPrompt = stripped.prompt;
-        forceNoInfoOnly = stripped.forceNoInfoOnly;
-        const linkMatches = systemPrompt.matchAll(/Link Markdown:\s*(\[[^\]]+\]\([^)]+\))/g);
-        sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
-      } else {
-        const localPrompt = buildContextPrompt(documents, effectiveQuery);
-        const stripped = stripStrictMarker(localPrompt);
-        systemPrompt = stripped.prompt;
-        forceNoInfoOnly = stripped.forceNoInfoOnly;
-        const linkMatches = systemPrompt.matchAll(/Link Markdown:\s*(\[[^\]]+\]\([^)]+\))/g);
-        sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
+      let serverPromptText = '';
+      let localPromptText = '';
+      let serverNoInfo = false;
+      let localNoInfo = false;
+
+      // Always try local documents if available
+      if (documents.length > 0) {
+        const localRaw = buildContextPrompt(documents, effectiveQuery);
+        const localStripped = stripStrictMarker(localRaw);
+        localPromptText = localStripped.prompt;
+        localNoInfo = localStripped.forceNoInfoOnly;
       }
+
+      // Also query server if enabled
+      if (serverMode) {
+        try {
+          const serverRaw = await buildContextFromServer(effectiveQuery);
+          const serverStripped = stripStrictMarker(serverRaw);
+          serverPromptText = serverStripped.prompt;
+          serverNoInfo = serverStripped.forceNoInfoOnly;
+        } catch (err: any) {
+          toast({ title: 'Eroare server', description: err?.message || 'Nu s-a putut interoga serverul. Se folosesc doar documentele locale.', variant: 'destructive' });
+        }
+      }
+
+      // Combine: use both if available, force no-info only if BOTH have no results
+      const hasServer = serverPromptText && !serverNoInfo;
+      const hasLocal = localPromptText && !localNoInfo;
+
+      if (hasServer && hasLocal) {
+        // Merge: extract document chunks from local prompt and append to server prompt
+        const localDocsSection = localPromptText.match(/Documentație relevantă confirmată pentru întrebare:\n([\s\S]*)$/);
+        const localChunks = localDocsSection ? localDocsSection[1] : '';
+        systemPrompt = serverPromptText + (localChunks ? `\n\n--- Documente locale adiționale ---\n${localChunks}` : '');
+      } else if (hasServer) {
+        systemPrompt = serverPromptText;
+      } else if (hasLocal) {
+        systemPrompt = localPromptText;
+      } else {
+        // Both have no info
+        forceNoInfoOnly = true;
+        systemPrompt = serverPromptText || localPromptText || `Răspunde EXACT cu: "${NO_INFO_RESPONSE}"`;
+      }
+
+      const linkMatches = systemPrompt.matchAll(/Link Markdown:\s*(\[[^\]]+\]\([^)]+\))/g);
+      sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
     } catch (err: any) {
-      toast({ title: 'Eroare retrieval', description: err?.message || 'Nu s-a putut interoga serverul.', variant: 'destructive' });
+      toast({ title: 'Eroare retrieval', description: err?.message || 'Eroare la construcția contextului.', variant: 'destructive' });
       const localPrompt = buildContextPrompt(documents, effectiveQuery);
       const stripped = stripStrictMarker(localPrompt);
       systemPrompt = stripped.prompt;
@@ -229,7 +260,7 @@ ${chunks}`;
       sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
     }
 
-    const imageEntries = !serverMode ? getImageEntries(documents) : [];
+    const imageEntries = documents.length > 0 ? getImageEntries(documents) : [];
 
     const history: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
