@@ -189,9 +189,10 @@ export function buildContextPrompt(docs: DocEntry[], question?: string): string 
     const snippet = d.content.slice(0, MAX_DOC_CHARS);
     if (totalChars + snippet.length > MAX_TOTAL_CHARS) break;
     totalChars += snippet.length;
-    const sourceUrl = d.source === 'url' ? d.name : '';
-    const sourceInfo = d.source === 'url' ? `(sursă web: https://${d.name})` : `(document local: ${d.name})`;
-    textSections.push(`--- Document: ${d.name} ${sourceInfo} ---\n${snippet}`);
+    const sourceUrl = d.source === 'url' ? (d.name.startsWith('http') ? d.name : `https://${d.name}`) : '';
+    const sourceInfo = d.source === 'url' ? `(sursă web: ${sourceUrl})` : `(document local: ${d.name})`;
+    const markdownLink = sourceUrl ? `[${d.name}](${sourceUrl})` : d.name;
+    textSections.push(`--- Document: ${d.name} ${sourceInfo} | Link Markdown: ${markdownLink} ---\n${snippet}`);
   }
 
   let combined = textSections.join('\n\n');
