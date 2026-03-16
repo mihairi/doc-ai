@@ -212,7 +212,7 @@ ${chunks}`;
     }
 
     let systemPrompt: string;
-    let sourceLinks: string[] = [];
+    let sourceReferences: string[] = [];
     let forceNoInfoOnly = false;
 
     try {
@@ -242,8 +242,8 @@ ${chunks}`;
       }
 
       // Combine: use both if available, force no-info only if BOTH have no results
-      const hasServer = serverPromptText && !serverNoInfo;
-      const hasLocal = localPromptText && !localNoInfo;
+      const hasServer = Boolean(serverPromptText) && !serverNoInfo;
+      const hasLocal = Boolean(localPromptText) && !localNoInfo;
 
       if (hasServer && hasLocal) {
         // Merge: extract document chunks from local prompt and append to server prompt
@@ -260,16 +260,14 @@ ${chunks}`;
         systemPrompt = serverPromptText || localPromptText || `Răspunde EXACT cu: "${NO_INFO_RESPONSE}"`;
       }
 
-      const linkMatches = systemPrompt.matchAll(/Link Markdown:\s*(\[[^\]]+\]\([^)]+\))/g);
-      sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
+      sourceReferences = extractSourceReferences(systemPrompt);
     } catch (err: any) {
       toast({ title: 'Eroare retrieval', description: err?.message || 'Eroare la construcția contextului.', variant: 'destructive' });
       const localPrompt = buildContextPrompt(documents, effectiveQuery);
       const stripped = stripStrictMarker(localPrompt);
       systemPrompt = stripped.prompt;
       forceNoInfoOnly = stripped.forceNoInfoOnly;
-      const linkMatches = systemPrompt.matchAll(/Link Markdown:\s*(\[[^\]]+\]\([^)]+\))/g);
-      sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
+      sourceReferences = extractSourceReferences(systemPrompt);
     }
 
     const imageEntries = documents.length > 0 ? getImageEntries(documents) : [];
