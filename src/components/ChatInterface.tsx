@@ -201,48 +201,46 @@ ${chunks}`;
 
     let systemPrompt: string;
     let sourceLinks: string[] = [];
-    
+    let forceNoInfoOnly = false;
+
     try {
       if (serverMode) {
-        // Use LlamaIndex server for retrieval
-        systemPrompt = await buildContextFromServer(effectiveQuery);
-        // Extract markdown links from the context for auto-appending
+        const serverPrompt = await buildContextFromServer(effectiveQuery);
+        const stripped = stripStrictMarker(serverPrompt);
+        systemPrompt = stripped.prompt;
+        forceNoInfoOnly = stripped.forceNoInfoOnly;
         const linkMatches = systemPrompt.matchAll(/Link Markdown:\s*(\[[^\]]+\]\([^)]+\))/g);
         sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
-        if (!systemPrompt) {
-          systemPrompt = 'Nu s-au găsit documente relevante. Răspunde EXACT cu: "Nu am găsit această informație în documentele disponibile." și nimic altceva.';
-        }
       } else {
-        // Fallback to local documents
-        systemPrompt = buildContextPrompt(documents, effectiveQuery);
-        // Extract markdown links from the context for auto-appending
+        const localPrompt = buildContextPrompt(documents, effectiveQuery);
+        const stripped = stripStrictMarker(localPrompt);
+        systemPrompt = stripped.prompt;
+        forceNoInfoOnly = stripped.forceNoInfoOnly;
         const linkMatches = systemPrompt.matchAll(/Link Markdown:\s*(\[[^\]]+\]\([^)]+\))/g);
         sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
       }
     } catch (err: any) {
       toast({ title: 'Eroare retrieval', description: err?.message || 'Nu s-a putut interoga serverul.', variant: 'destructive' });
-      // Fallback to local
-      systemPrompt = buildContextPrompt(documents, text);
+      const localPrompt = buildContextPrompt(documents, effectiveQuery);
+      const stripped = stripStrictMarker(localPrompt);
+      systemPrompt = stripped.prompt;
+      forceNoInfoOnly = stripped.forceNoInfoOnly;
+      const linkMatches = systemPrompt.matchAll(/Link Markdown:\s*(\[[^\]]+\]\([^)]+\))/g);
+      sourceLinks = [...new Set([...linkMatches].map(m => m[1]))];
     }
 
     const imageEntries = !serverMode ? getImageEntries(documents) : [];
 
-    // Truncate history to avoid exceeding model context window
-    const MAX_HISTORY_CHARS = 3000;
-    let historyChars = 0;
-    const recentMessages: ChatMessage[] = [];
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
-      if (historyChars + m.content.length > MAX_HISTORY_CHARS) break;
-      historyChars += m.content.length;
-      recentMessages.unshift({ role: m.role as 'user' | 'assistant', content: m.content });
-    }
-
     const history: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
-      ...recentMessages,
       { role: 'user' as const, content: text },
     ];
+
+    if (forceNoInfoOnly) {
+      setMessages(prev => [...prev, { role: 'assistant', content: NO_INFO_RESPONSE }]);
+      setIsStreaming(false);
+      return;
+    }
 
     let assistantSoFar = '';
     let streamingMsgAdded = false;
@@ -268,16 +266,27 @@ ${chunks}`;
         onDelta: upsert,
         onDone: () => {
           setIsStreaming(false);
-          if (!assistantSoFar.trim()) {
+          const trimmed = assistantSoFar.trim();
+          if (!trimmed) {
             setMessages(prev => [...prev, { role: 'assistant', content: 'Nu am primit răspuns de la model. Verificați conexiunea la LLM și modelul selectat.' }]);
-          } else if (sourceLinks.length > 0) {
-            // Auto-append sources if the LLM didn't include them
-            const hasSourcesAlready = assistantSoFar.includes('📄 Surse:') || assistantSoFar.includes('**Surse:**');
-            if (!hasSourcesAlready) {
-              const sourcesSection = '\n\n**📄 Surse:**\n' + sourceLinks.map(l => `- ${l}`).join('\n');
-              assistantSoFar += sourcesSection;
-              setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
-            }
+            return;
+          }
+
+          const shouldForceNoInfo =
+            sourceLinks.length === 0 ||
+            leaksExternalKnowledge(trimmed);
+
+          if (shouldForceNoInfo) {
+            assistantSoFar = NO_INFO_RESPONSE;
+            setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
+            return;
+          }
+
+          const hasSourcesAlready = assistantSoFar.includes('📄 Surse:') || assistantSoFar.includes('**Surse:**');
+          if (!hasSourcesAlready) {
+            const sourcesSection = '\n\n**📄 Surse:**\n' + sourceLinks.map(l => `- ${l}`).join('\n');
+            assistantSoFar += sourcesSection;
+            setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
           }
         },
         onError: (err) => {
