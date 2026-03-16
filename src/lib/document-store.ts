@@ -157,14 +157,62 @@ function normalize(text: string): string[] {
     .filter(t => t.length > 2);
 }
 
+function normalizeForSearch(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function scoreDoc(content: string, queryTokens: string[]): number {
   if (queryTokens.length === 0) return 0;
-  const haystack = content.toLowerCase();
+  const haystack = normalizeForSearch(content);
   let score = 0;
   for (const token of queryTokens) {
     if (haystack.includes(token)) score += 1;
   }
   return score;
+}
+
+function splitIntoCandidateSnippets(content: string): string[] {
+  const segments = content
+    .split(/\n\s*\n|(?=\[Pagina\s+\d+\])/g)
+    .map(segment => segment.trim())
+    .filter(Boolean);
+
+  const baseSegments = segments.length > 0 ? segments : [content.trim()];
+  const snippets: string[] = [];
+  const MAX_CHUNK = 1400;
+  const STEP = 1000;
+
+  for (const segment of baseSegments) {
+    if (segment.length <= MAX_CHUNK) {
+      snippets.push(segment);
+      continue;
+    }
+
+    for (let start = 0; start < segment.length; start += STEP) {
+      const chunk = segment.slice(start, start + MAX_CHUNK).trim();
+      if (chunk) snippets.push(chunk);
+      if (start + MAX_CHUNK >= segment.length) break;
+    }
+  }
+
+  return snippets;
+}
+
+function getRelevantSnippets(content: string, queryTokens: string[], limit = 2): string[] {
+  const snippets = splitIntoCandidateSnippets(content)
+    .map(snippet => ({ snippet, score: scoreDoc(snippet, queryTokens) }))
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.snippet.length - b.snippet.length)
+    .slice(0, limit)
+    .map(item => item.snippet);
+
+  return [...new Set(snippets)];
 }
 
 export function buildContextPrompt(docs: DocEntry[], question?: string): string {
@@ -175,25 +223,31 @@ export function buildContextPrompt(docs: DocEntry[], question?: string): string 
   const queryTokens = normalize(question || '');
 
   const rankedTextDocs = [...textDocs]
-    .map(doc => ({ doc, score: scoreDoc(doc.content, queryTokens) }))
+    .map(doc => {
+      const snippets = getRelevantSnippets(doc.content, queryTokens);
+      const bestScore = snippets.length > 0
+        ? Math.max(...snippets.map(snippet => scoreDoc(snippet, queryTokens)))
+        : 0;
+      return { doc, score: bestScore, snippets };
+    })
     .sort((a, b) => b.score - a.score);
 
   const hasRelevantTextMatch = rankedTextDocs.some(x => x.score > 0);
   const selectedTextDocs = hasRelevantTextMatch
-    ? rankedTextDocs.filter(x => x.score > 0).slice(0, 8).map(x => x.doc)
+    ? rankedTextDocs.filter(x => x.score > 0).slice(0, 8)
     : [];
 
   if (queryTokens.length > 0 && selectedTextDocs.length === 0 && imageDocs.length === 0) {
     return `${STRICT_NO_INFO_MARKER}\nNu există fragmente relevante pentru această întrebare în documentele încărcate. Răspunde EXACT cu: "${NO_INFO_RESPONSE}" și nimic altceva.`;
   }
 
-  const MAX_DOC_CHARS = 2000;
   const MAX_TOTAL_CHARS = 6000;
   let totalChars = 0;
 
   const textSections: string[] = [];
-  for (const d of selectedTextDocs) {
-    const snippet = d.content.slice(0, MAX_DOC_CHARS);
+  for (const { doc: d, snippets } of selectedTextDocs) {
+    const snippet = snippets.join('\n\n...\n\n').slice(0, 2200);
+    if (!snippet) continue;
     if (totalChars + snippet.length > MAX_TOTAL_CHARS) break;
     totalChars += snippet.length;
     const sourceUrl = d.source === 'url' ? (d.name.startsWith('http') ? d.name : `https://${d.name}`) : '';
