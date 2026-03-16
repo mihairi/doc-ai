@@ -152,7 +152,7 @@ ${chunks}`;
         }
       } else {
         // Fallback to local documents
-        systemPrompt = buildContextPrompt(documents, text);
+        systemPrompt = buildContextPrompt(documents, effectiveQuery);
       }
     } catch (err: any) {
       toast({ title: 'Eroare retrieval', description: err?.message || 'Nu s-a putut interoga serverul.', variant: 'destructive' });
