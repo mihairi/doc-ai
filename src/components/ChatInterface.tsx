@@ -78,6 +78,18 @@ function leaksExternalKnowledge(answer: string): boolean {
   return EXTERNAL_KNOWLEDGE_PATTERNS.some(pattern => normalizedAnswer.includes(normalizeForMatch(pattern)));
 }
 
+function extractSourceReferences(prompt: string): string[] {
+  return [...new Set(
+    prompt
+      .split('\n')
+      .map(line => {
+        const match = line.match(/Link Markdown:\s*(.*?)\s*---\s*$/);
+        return match?.[1]?.trim() || '';
+      })
+      .filter(Boolean)
+  )];
+}
+
 export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
