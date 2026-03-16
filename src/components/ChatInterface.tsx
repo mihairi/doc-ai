@@ -212,6 +212,14 @@ ${chunks}`;
           setIsStreaming(false);
           if (!assistantSoFar.trim()) {
             setMessages(prev => [...prev, { role: 'assistant', content: 'Nu am primit răspuns de la model. Verificați conexiunea la LLM și modelul selectat.' }]);
+          } else if (sourceLinks.length > 0) {
+            // Auto-append sources if the LLM didn't include them
+            const hasSourcesAlready = assistantSoFar.includes('📄 Surse:') || assistantSoFar.includes('**Surse:**');
+            if (!hasSourcesAlready) {
+              const sourcesSection = '\n\n**📄 Surse:**\n' + sourceLinks.map(l => `- ${l}`).join('\n');
+              assistantSoFar += sourcesSection;
+              setMessages(prev => prev.map((m, i) => i === prev.length - 1 ? { ...m, content: assistantSoFar } : m));
+            }
           }
         },
         onError: (err) => {
