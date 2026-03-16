@@ -326,7 +326,19 @@ ${chunks}`;
       </div>
 
       {/* Input */}
-      <div className="border-t border-border p-4">
+      <div className="border-t border-border p-4 space-y-2">
+        <div className="flex items-center gap-2">
+          <Switch
+            id="query-rewrite"
+            checked={queryRewrite}
+            onCheckedChange={setQueryRewrite}
+            className="scale-75"
+          />
+          <Label htmlFor="query-rewrite" className="text-[11px] text-muted-foreground flex items-center gap-1 cursor-pointer select-none">
+            <Sparkles className="h-3 w-3" />
+            Query Rewriting
+          </Label>
+        </div>
         <div className="flex gap-2 items-end">
           <Textarea
             value={input}
