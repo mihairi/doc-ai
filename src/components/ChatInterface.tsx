@@ -445,48 +445,34 @@ ${chunks}`;
                     remarkPlugins={[remarkGfm]}
                     components={{
                       a: ({ href, children }) => {
-                        // Handle local document links
-                        if (href?.startsWith('docbot-local://')) {
+                        if (href?.startsWith('/__docbot_local__/')) {
                           const handleLocalDocClick = async (e: React.MouseEvent) => {
                             e.preventDefault();
                             try {
-                              const url = new URL(href.replace('docbot-local://', 'http://placeholder/'));
-                              const docId = url.hostname;
+                              const url = new URL(href, window.location.origin);
+                              const pathParts = url.pathname.split('/');
+                              const docId = decodeURIComponent(pathParts[pathParts.length - 1] || '');
                               const docName = url.searchParams.get('name') || 'document';
                               const page = url.searchParams.get('page') || '';
-                              
+
                               const doc = await loadDocumentById(docId);
                               if (!doc) {
                                 toast({ title: 'Document negăsit', description: 'Documentul a fost șters din stocarea locală.', variant: 'destructive' });
                                 return;
                               }
 
-                              // Open content in a new window
-                              const newWindow = window.open('', '_blank');
-                              if (newWindow) {
-                                newWindow.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${docName}</title><style>body{font-family:system-ui,sans-serif;max-width:900px;margin:0 auto;padding:2rem;background:#1a1a2e;color:#e0e0e0;line-height:1.6;white-space:pre-wrap;word-wrap:break-word;}h1{color:#7c8cf8;border-bottom:1px solid #333;padding-bottom:0.5rem;}</style></head><body><h1>${docName}${page ? ` — Pagina ${page}` : ''}</h1>${doc.content.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</body></html>`);
-                                newWindow.document.close();
-                                // Scroll to page marker if available
-                                if (page) {
-                                  const pageMarker = `[Pagina ${page}]`;
-                                  const idx = doc.content.indexOf(pageMarker);
-                                  if (idx > 0) {
-                                    setTimeout(() => {
-                                      const body = newWindow.document.body;
-                                      const textBefore = doc.content.substring(0, idx);
-                                      const ratio = textBefore.length / doc.content.length;
-                                      body.scrollTop = body.scrollHeight * ratio;
-                                    }, 100);
-                                  }
-                                }
-                              }
+                              const viewerHtml = buildLocalDocumentViewerHtml(doc, docName);
+                              const viewerBlob = new Blob([viewerHtml], { type: 'text/html' });
+                              const viewerUrl = URL.createObjectURL(viewerBlob);
+                              window.open(page ? `${viewerUrl}#page-${page}` : viewerUrl, '_blank', 'noopener,noreferrer');
+                              setTimeout(() => URL.revokeObjectURL(viewerUrl), 60_000);
                             } catch {
                               toast({ title: 'Eroare', description: 'Nu s-a putut deschide documentul.', variant: 'destructive' });
                             }
                           };
 
                           return (
-                            <a href="#" onClick={handleLocalDocClick} className="text-primary font-medium underline underline-offset-2 decoration-primary/50 hover:decoration-primary hover:text-primary/80 transition-colors inline-flex items-center gap-0.5 cursor-pointer">
+                            <a href={href} onClick={handleLocalDocClick} className="text-primary font-medium underline underline-offset-2 decoration-primary/50 hover:decoration-primary hover:text-primary/80 transition-colors inline-flex items-center gap-0.5 cursor-pointer">
                               {children}
                               <svg className="inline-block w-3 h-3 ml-0.5 shrink-0" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.5 3C3.5 3 8.5 3 9 3C9 3.5 9 8.5 9 8.5M9 3L3 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                             </a>

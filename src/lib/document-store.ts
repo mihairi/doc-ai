@@ -273,11 +273,10 @@ export function buildContextPrompt(docs: DocEntry[], question?: string): string 
       docUrl = d.name.startsWith('http') ? d.name : `https://${d.name}`;
       markdownLink = `[${d.name}](${docUrl})`;
     } else {
-      // Use a special docbot-local: scheme that the UI will intercept
       const pageMatch = snippet.match(/\[Pagina\s+(\d+)\]/);
       const pageNum = pageMatch ? pageMatch[1] : '';
       const pageSuffix = pageNum ? `&page=${pageNum}` : '';
-      docUrl = `docbot-local://${d.id}?name=${encodeURIComponent(d.name)}${pageSuffix}`;
+      docUrl = `/__docbot_local__/${encodeURIComponent(d.id)}?name=${encodeURIComponent(d.name)}${pageSuffix}`;
       markdownLink = `[${d.name}${pageNum ? ` - pagina ${pageNum}` : ''}](${docUrl})`;
     }
 
