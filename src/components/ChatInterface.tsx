@@ -80,8 +80,8 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
         let sourceLabel = `${fileName}`;
         if (page) sourceLabel += ` | pagina ${page}`;
         if (section) sourceLabel += ` | secțiunea: ${section}`;
-        if (fileUrl) sourceLabel += ` | url: ${fileUrl}`;
-        return `--- ${sourceLabel} (scor: ${r.score.toFixed(3)}) ---\n${r.text}`;
+        const markdownLink = fileUrl ? `[${fileName}${page ? ` - pagina ${page}` : ''}](${fileUrl})` : fileName;
+        return `--- Sursa: ${sourceLabel} | Link Markdown: ${markdownLink} (scor: ${r.score.toFixed(3)}) ---\n${r.text}`;
       })
       .join('\n\n');
 
