@@ -125,6 +125,22 @@ ${chunks}`;
 
     setIsStreaming(true);
 
+    // Query rewriting
+    let effectiveQuery = text;
+    if (queryRewrite && config.model) {
+      try {
+        effectiveQuery = await rewriteQuery(config, text);
+        if (effectiveQuery !== text) {
+          setMessages(prev => [...prev, { 
+            role: 'assistant', 
+            content: `🔄 **Întrebare reformulată:** ${effectiveQuery}` 
+          }]);
+        }
+      } catch {
+        // fallback to original query
+      }
+    }
+
     let systemPrompt: string;
     
     try {
