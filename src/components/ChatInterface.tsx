@@ -337,7 +337,7 @@ ${chunks}`;
           />
           <Label htmlFor="query-rewrite" className="text-[11px] text-muted-foreground flex items-center gap-1 cursor-pointer select-none">
             <Sparkles className="h-3 w-3" />
-            Query Rewriting
+            Reformulează întrebarea cu AI
           </Label>
         </div>
         <div className="flex gap-2 items-end">
