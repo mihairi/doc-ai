@@ -1,3 +1,5 @@
+import { getExternalConfig } from './config-loader';
+
 const CONFIG_KEY = 'docbot-app-config';
 
 export interface AppConfig {
