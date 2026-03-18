@@ -286,6 +286,34 @@ def query():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/auth/verify", methods=["POST"])
+def auth_verify():
+    data = request.get_json() or {}
+    password = data.get("password", "")
+    if not password:
+        return jsonify({"error": "Missing 'password' field"}), 400
+    stored = _read_password()
+    if password == stored:
+        return jsonify({"authenticated": True})
+    return jsonify({"authenticated": False}), 401
+
+
+@app.route("/api/auth/change-password", methods=["POST"])
+def auth_change_password():
+    data = request.get_json() or {}
+    current = data.get("current_password", "")
+    new_pass = data.get("new_password", "")
+    if not current or not new_pass:
+        return jsonify({"error": "Missing fields"}), 400
+    stored = _read_password()
+    if current != stored:
+        return jsonify({"error": "Current password incorrect"}), 401
+    if len(new_pass) < 4:
+        return jsonify({"error": "Password too short (min 4 chars)"}), 400
+    _write_password(new_pass)
+    return jsonify({"success": True})
+
+
 def main():
     global _folders, _index
 
