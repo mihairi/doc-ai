@@ -1,3 +1,5 @@
+import { getExternalConfig } from './config-loader';
+
 const CONFIG_KEY = 'docbot-app-config';
 
 export interface AppConfig {
@@ -17,7 +19,8 @@ export function loadAppConfig(): AppConfig {
       return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
     }
   } catch {}
-  return { ...DEFAULT_CONFIG };
+  const ext = getExternalConfig();
+  return { ...DEFAULT_CONFIG, ...ext.app };
 }
 
 export function saveAppConfig(config: AppConfig) {

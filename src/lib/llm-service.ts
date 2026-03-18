@@ -1,3 +1,5 @@
+import { getExternalConfig } from './config-loader';
+
 export type LLMProvider = 'ollama' | 'lmstudio';
 
 export interface LLMConfig {
@@ -287,8 +289,10 @@ export function loadConfig(): LLMConfig {
     const saved = localStorage.getItem('llm-config');
     if (saved) return JSON.parse(saved);
   } catch {}
-  return { provider: 'ollama', host: '127.0.0.1', port: '11434', model: '' };
+  const ext = getExternalConfig();
+  return { ...ext.llm };
 }
+
 
 export function saveConfig(config: LLMConfig) {
   localStorage.setItem('llm-config', JSON.stringify(config));

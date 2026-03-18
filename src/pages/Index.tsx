@@ -7,6 +7,7 @@ import { LLMConfig, loadConfig } from '@/lib/llm-service';
 import { DocEntry, loadDocuments, migrateFromLocalStorage } from '@/lib/document-store';
 import { isAdminAuthenticated, authenticateAdmin, logoutAdmin } from '@/lib/admin-auth';
 import { loadAppConfig, applyBackground, applyAppName, AppConfig } from '@/lib/app-config';
+import { loadExternalConfig } from '@/lib/config-loader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -18,14 +19,22 @@ const Index = () => {
   const [showLogin, setShowLogin] = useState(false);
   const [password, setPassword] = useState('');
   const [appConfig, setAppConfig] = useState<AppConfig>(loadAppConfig);
+  const [ready, setReady] = useState(false);
   const { toast } = useToast();
 
-  // Initialize app config (ensure default password, apply settings)
+  // Load external config.json first, then apply settings
   useEffect(() => {
-    const cfg = loadAppConfig();
-    setAppConfig(cfg);
-    applyBackground(cfg.backgroundHsl);
-    applyAppName(cfg.appName);
+    (async () => {
+      await loadExternalConfig();
+      // Re-read configs now that external defaults are loaded
+      const llm = loadConfig();
+      setConfig(llm);
+      const cfg = loadAppConfig();
+      setAppConfig(cfg);
+      applyBackground(cfg.backgroundHsl);
+      applyAppName(cfg.appName);
+      setReady(true);
+    })();
   }, []);
 
   // Load docs from IndexedDB on mount (+ migrate from localStorage if needed)
