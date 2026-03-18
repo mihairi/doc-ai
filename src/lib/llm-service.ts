@@ -1,3 +1,5 @@
+import { getExternalConfig } from './config-loader';
+
 export type LLMProvider = 'ollama' | 'lmstudio';
 
 export interface LLMConfig {
