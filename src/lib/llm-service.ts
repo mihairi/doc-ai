@@ -288,10 +288,26 @@ export function loadConfig(): LLMConfig {
     if (saved) return JSON.parse(saved);
   } catch {}
   // Use defaults from config.json if loaded
-  const { getExternalConfig } = require('./config-loader');
-  const ext = getExternalConfig();
-  return { ...ext.llm };
+  try {
+    // Dynamic import would be async; use sync cache access
+    const { getExternalConfig } = await_import_config_loader();
+    return { ...getExternalConfig().llm };
+  } catch {}
+  return { provider: 'ollama', host: '127.0.0.1', port: '11434', model: '' };
 }
+
+/** Helper to access config-loader synchronously (it's already loaded by Index.tsx on startup) */
+function await_import_config_loader() {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  return { getExternalConfig: (_getExtCfg || (() => null)) as typeof import('./config-loader').getExternalConfig };
+}
+
+let _getExtCfg: (() => any) | null = null;
+try {
+  // This import is resolved at build time by Vite
+  import('./config-loader').then(m => { _getExtCfg = m.getExternalConfig; });
+} catch {}
+
 
 export function saveConfig(config: LLMConfig) {
   localStorage.setItem('llm-config', JSON.stringify(config));
