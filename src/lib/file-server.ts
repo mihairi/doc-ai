@@ -44,7 +44,10 @@ export function loadFileServerConfig(): FileServerConfig {
     const saved = localStorage.getItem(FS_CONFIG_KEY);
     if (saved) return JSON.parse(saved);
   } catch {}
-  return { enabled: false, url: 'http://127.0.0.1:5123' };
+  // Use defaults from config.json if loaded
+  const { getExternalConfig } = require('./config-loader');
+  const ext = getExternalConfig();
+  return { ...ext.fileServer };
 }
 
 export function saveFileServerConfig(config: FileServerConfig) {

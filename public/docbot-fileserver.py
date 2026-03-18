@@ -314,6 +314,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="DocBot File Server (LlamaIndex)")
     parser.add_argument("--port", type=int, default=5123, help="Port (default: 5123)")
+    parser.add_argument("--host", type=str, default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
     parser.add_argument("--folders", type=str, required=True,
                         help="Comma-separated folder paths")
     args = parser.parse_args()
@@ -340,9 +341,9 @@ def main():
         except Exception as e:
             print(f"[DocBot] Could not load persisted index: {e}")
 
-    print(f"\nDocBot File Server running on http://127.0.0.1:{args.port}")
+    print(f"\nDocBot File Server running on http://{args.host}:{args.port}")
     print(f"Serving {len(_folders)} folder(s)\n")
-    app.run(host="127.0.0.1", port=args.port, debug=False)
+    app.run(host=args.host, port=args.port, debug=False)
 
 
 if __name__ == "__main__":

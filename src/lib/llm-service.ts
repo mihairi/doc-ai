@@ -287,7 +287,10 @@ export function loadConfig(): LLMConfig {
     const saved = localStorage.getItem('llm-config');
     if (saved) return JSON.parse(saved);
   } catch {}
-  return { provider: 'ollama', host: '127.0.0.1', port: '11434', model: '' };
+  // Use defaults from config.json if loaded
+  const { getExternalConfig } = require('./config-loader');
+  const ext = getExternalConfig();
+  return { ...ext.llm };
 }
 
 export function saveConfig(config: LLMConfig) {
