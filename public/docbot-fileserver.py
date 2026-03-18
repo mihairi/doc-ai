@@ -22,6 +22,19 @@ import argparse
 import threading
 from pathlib import Path
 
+_password_file = ".docbot-password"
+
+def _read_password() -> str:
+    p = Path(_password_file)
+    if p.exists():
+        return p.read_text(encoding="utf-8").strip()
+    # Default password on first run
+    p.write_text("admin123", encoding="utf-8")
+    return "admin123"
+
+def _write_password(new_password: str):
+    Path(_password_file).write_text(new_password, encoding="utf-8")
+
 from typing import Any, List
 from llama_index.core.embeddings import BaseEmbedding
 from openai import OpenAI
