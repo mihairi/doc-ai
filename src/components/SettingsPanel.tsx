@@ -17,7 +17,8 @@ import {
   triggerIndexing,
   RemoteFolder,
 } from '@/lib/file-server';
-import { AppConfig, saveAppConfig, hashPassword } from '@/lib/app-config';
+import { AppConfig, saveAppConfig } from '@/lib/app-config';
+import { loadFileServerConfig as loadFsConfigForAuth, changePasswordOnServer } from '@/lib/file-server';
 import { useToast } from '@/hooks/use-toast';
 
 interface SettingsPanelProps {
