@@ -46,8 +46,6 @@ export function loadFileServerConfig(): FileServerConfig {
     const saved = localStorage.getItem(FS_CONFIG_KEY);
     if (saved) return JSON.parse(saved);
   } catch {}
-  // Use defaults from config.json if loaded
-  const { getExternalConfig } = require('./config-loader');
   const ext = getExternalConfig();
   return { ...ext.fileServer };
 }
