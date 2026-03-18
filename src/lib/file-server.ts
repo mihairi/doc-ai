@@ -1,3 +1,5 @@
+import { getExternalConfig } from './config-loader';
+
 // LlamaIndex server client for document indexing and retrieval
 
 export interface FileServerConfig {
