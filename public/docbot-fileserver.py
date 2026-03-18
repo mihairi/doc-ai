@@ -22,6 +22,19 @@ import argparse
 import threading
 from pathlib import Path
 
+_password_file = ".docbot-password"
+
+def _read_password() -> str:
+    p = Path(_password_file)
+    if p.exists():
+        return p.read_text(encoding="utf-8").strip()
+    # Default password on first run
+    p.write_text("admin123", encoding="utf-8")
+    return "admin123"
+
+def _write_password(new_password: str):
+    Path(_password_file).write_text(new_password, encoding="utf-8")
+
 from typing import Any, List
 from llama_index.core.embeddings import BaseEmbedding
 from openai import OpenAI
@@ -271,6 +284,34 @@ def query():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/auth/verify", methods=["POST"])
+def auth_verify():
+    data = request.get_json() or {}
+    password = data.get("password", "")
+    if not password:
+        return jsonify({"error": "Missing 'password' field"}), 400
+    stored = _read_password()
+    if password == stored:
+        return jsonify({"authenticated": True})
+    return jsonify({"authenticated": False}), 401
+
+
+@app.route("/api/auth/change-password", methods=["POST"])
+def auth_change_password():
+    data = request.get_json() or {}
+    current = data.get("current_password", "")
+    new_pass = data.get("new_password", "")
+    if not current or not new_pass:
+        return jsonify({"error": "Missing fields"}), 400
+    stored = _read_password()
+    if current != stored:
+        return jsonify({"error": "Current password incorrect"}), 401
+    if len(new_pass) < 4:
+        return jsonify({"error": "Password too short (min 4 chars)"}), 400
+    _write_password(new_pass)
+    return jsonify({"success": True})
 
 
 def main():

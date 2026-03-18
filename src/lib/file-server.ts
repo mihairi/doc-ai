@@ -97,3 +97,33 @@ export async function fetchRemoteFolders(url: string): Promise<RemoteFolder[]> {
   const data = await res.json();
   return data.folders || [];
 }
+
+export async function verifyPasswordOnServer(url: string, password: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl(url)}/api/auth/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.authenticated === true;
+  } catch {
+    return false;
+  }
+}
+
+export async function changePasswordOnServer(url: string, currentPassword: string, newPassword: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(`${baseUrl(url)}/api/auth/change-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    const data = await res.json();
+    if (!res.ok) return { success: false, error: data.error || 'Server error' };
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Connection failed' };
+  }
+}

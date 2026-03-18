@@ -6,7 +6,7 @@ import { ChatInterface } from '@/components/ChatInterface';
 import { LLMConfig, loadConfig } from '@/lib/llm-service';
 import { DocEntry, loadDocuments, migrateFromLocalStorage } from '@/lib/document-store';
 import { isAdminAuthenticated, authenticateAdmin, logoutAdmin } from '@/lib/admin-auth';
-import { loadAppConfig, ensureDefaultPassword, applyBackground, applyAppName, AppConfig } from '@/lib/app-config';
+import { loadAppConfig, applyBackground, applyAppName, AppConfig } from '@/lib/app-config';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -22,12 +22,10 @@ const Index = () => {
 
   // Initialize app config (ensure default password, apply settings)
   useEffect(() => {
-    (async () => {
-      const cfg = await ensureDefaultPassword(loadAppConfig());
-      setAppConfig(cfg);
-      applyBackground(cfg.backgroundHsl);
-      applyAppName(cfg.appName);
-    })();
+    const cfg = loadAppConfig();
+    setAppConfig(cfg);
+    applyBackground(cfg.backgroundHsl);
+    applyAppName(cfg.appName);
   }, []);
 
   // Load docs from IndexedDB on mount (+ migrate from localStorage if needed)
