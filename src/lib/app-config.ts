@@ -17,6 +17,12 @@ export function loadAppConfig(): AppConfig {
       return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
     }
   } catch {}
+  // Use defaults from config.json if loaded
+  try {
+    const { getExternalConfig } = require('./config-loader');
+    const ext = getExternalConfig();
+    return { ...DEFAULT_CONFIG, ...ext.app };
+  } catch {}
   return { ...DEFAULT_CONFIG };
 }
 
