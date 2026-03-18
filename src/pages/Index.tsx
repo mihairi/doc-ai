@@ -22,12 +22,10 @@ const Index = () => {
 
   // Initialize app config (ensure default password, apply settings)
   useEffect(() => {
-    (async () => {
-      const cfg = await ensureDefaultPassword(loadAppConfig());
-      setAppConfig(cfg);
-      applyBackground(cfg.backgroundHsl);
-      applyAppName(cfg.appName);
-    })();
+    const cfg = loadAppConfig();
+    setAppConfig(cfg);
+    applyBackground(cfg.backgroundHsl);
+    applyAppName(cfg.appName);
   }, []);
 
   // Load docs from IndexedDB on mount (+ migrate from localStorage if needed)

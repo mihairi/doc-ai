@@ -452,34 +452,55 @@ export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigCh
               <Label className="text-xs text-muted-foreground flex items-center gap-1">
                 <KeyRound className="h-3 w-3" /> Schimbă parola admin
               </Label>
-              <div className="flex gap-2 mt-1">
+              <div className="flex flex-col gap-2 mt-1">
                 <Input
                   type="password"
-                  placeholder="Parolă nouă"
-                  id="new-admin-password"
+                  placeholder="Parola curentă"
+                  id="current-admin-password"
                   className="h-9 font-mono text-xs bg-muted border-border"
                 />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={async () => {
-                    const input = document.getElementById('new-admin-password') as HTMLInputElement;
-                    const val = input?.value?.trim();
-                    if (!val || val.length < 4) {
-                      toast({ title: 'Parola trebuie să aibă minim 4 caractere', variant: 'destructive' });
-                      return;
-                    }
-                    const hash = await hashPassword(val);
-                    const updated = { ...appConfig, adminPasswordHash: hash };
-                    saveAppConfig(updated);
-                    onAppConfigChange(updated);
-                    input.value = '';
-                    toast({ title: 'Parolă schimbată cu succes' });
-                  }}
-                >
-                  Salvează
-                </Button>
+                <div className="flex gap-2">
+                  <Input
+                    type="password"
+                    placeholder="Parolă nouă"
+                    id="new-admin-password"
+                    className="h-9 font-mono text-xs bg-muted border-border"
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={async () => {
+                      const currentInput = document.getElementById('current-admin-password') as HTMLInputElement;
+                      const newInput = document.getElementById('new-admin-password') as HTMLInputElement;
+                      const currentVal = currentInput?.value?.trim();
+                      const newVal = newInput?.value?.trim();
+                      if (!currentVal) {
+                        toast({ title: 'Introduceți parola curentă', variant: 'destructive' });
+                        return;
+                      }
+                      if (!newVal || newVal.length < 4) {
+                        toast({ title: 'Parola nouă trebuie să aibă minim 4 caractere', variant: 'destructive' });
+                        return;
+                      }
+                      const authFsConfig = loadFsConfigForAuth();
+                      if (!authFsConfig.enabled || !authFsConfig.url) {
+                        toast({ title: 'Serverul LlamaIndex trebuie activat pentru gestionarea parolei', variant: 'destructive' });
+                        return;
+                      }
+                      const result = await changePasswordOnServer(authFsConfig.url, currentVal, newVal);
+                      if (result.success) {
+                        currentInput.value = '';
+                        newInput.value = '';
+                        toast({ title: 'Parolă schimbată cu succes' });
+                      } else {
+                        toast({ title: 'Eroare', description: result.error, variant: 'destructive' });
+                      }
+                    }}
+                  >
+                    Salvează
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
