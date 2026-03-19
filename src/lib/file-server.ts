@@ -121,10 +121,14 @@ export async function queryIndex(url: string, question: string, topK = 6): Promi
 }
 
 export async function fetchRemoteFolders(url: string): Promise<RemoteFolder[]> {
-  const res = await fetch(`${baseUrl(url)}/api/folders`);
-  if (!res.ok) throw new Error(`Server error: ${res.status}`);
-  const data = await res.json();
-  return data.folders || [];
+  try {
+    const res = await fetch(`${baseUrl(url)}/api/folders`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+    const data = await res.json();
+    return data.folders || [];
+  } catch (err) {
+    throw new Error(networkErrorMessage(err));
+  }
 }
 
 export async function verifyPasswordOnServer(url: string, password: string): Promise<boolean> {
