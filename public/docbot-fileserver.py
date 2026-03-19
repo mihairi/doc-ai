@@ -75,8 +75,17 @@ try:
     from flask_cors import CORS
 except ImportError:
     print("Missing dependencies. Install with:")
-    print("  pip install flask flask-cors llama-index llama-index-embeddings-huggingface")
+    print("  pip install flask flask-cors llama-index llama-index-embeddings-huggingface pymupdf")
     sys.exit(1)
+
+# PyMuPDF-based PDF reader for proper text extraction on Linux
+HAS_PYMUPDF = False
+try:
+    import fitz  # PyMuPDF
+    HAS_PYMUPDF = True
+except ImportError:
+    print("Warning: pymupdf not installed. PDF text extraction may return binary data.")
+    print("  pip install pymupdf")
 
 try:
     from llama_index.core import (
