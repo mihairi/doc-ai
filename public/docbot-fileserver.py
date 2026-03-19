@@ -42,30 +42,40 @@ from openai import OpenAI
 class LMStudioEmbedding(BaseEmbedding):
     def __init__(self, model_name: str, base_url: str, **kwargs: Any):
         super().__init__(model_name=model_name, **kwargs)
+        self._base_url = base_url
         self._client = OpenAI(base_url=base_url, api_key="lm-studio")
 
     def _get_query_embedding(self, query: str) -> List[float]:
-        """Obține embedding-ul pentru o întrebare."""
-        return self._client.embeddings.create(
-            input=[query], model=self.model_name
-        ).data[0].embedding
+        try:
+            return self._client.embeddings.create(
+                input=[query], model=self.model_name
+            ).data[0].embedding
+        except Exception as e:
+            raise ConnectionError(
+                f"Nu se poate conecta la LM Studio ({self._base_url}). "
+                f"Asigură-te că LM Studio rulează și modelul de embedding '{self.model_name}' este încărcat. "
+                f"Eroare: {e}"
+            )
 
     def _get_text_embedding(self, text: str) -> List[float]:
-        """Obține embedding-ul pentru un document (chunk)."""
-        return self._client.embeddings.create(
-            input=[text], model=self.model_name
-        ).data[0].embedding
+        try:
+            return self._client.embeddings.create(
+                input=[text], model=self.model_name
+            ).data[0].embedding
+        except Exception as e:
+            raise ConnectionError(
+                f"Nu se poate conecta la LM Studio ({self._base_url}). "
+                f"Asigură-te că LM Studio rulează și modelul de embedding '{self.model_name}' este încărcat. "
+                f"Eroare: {e}"
+            )
 
     async def _aget_query_embedding(self, query: str) -> List[float]:
         return self._get_query_embedding(query)
 
     async def _aget_text_embedding(self, text: str) -> List[float]:
         return self._get_text_embedding(text)
-        
+
 custom_embed_model = LMStudioEmbedding(
-    #model_name="text-embedding-granite-embedding-278m-multilingual",
-    #model_name="text-embedding-rgveda-embedding-gemma",
-    #model_name="text-embedding-nomic-embed-text-v2-moe",
     model_name="text-embedding-embedding-gemma-300m",
     base_url="http://localhost:1234/v1",
 )
