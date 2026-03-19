@@ -94,6 +94,7 @@ try:
         Settings,
         StorageContext,
         load_index_from_storage,
+        Document,
     )
     #from llama_index.embeddings.huggingface import HuggingFaceEmbedding
     HAS_LLAMA = True
@@ -101,6 +102,75 @@ except ImportError:
     HAS_LLAMA = False
     print("Warning: llama-index not installed. Install with:")
     print("  pip install llama-index llama-index-embeddings-huggingface")
+
+
+def _read_pdf_with_pymupdf(file_path: str) -> list:
+    """Extract text from PDF using PyMuPDF (fitz) - works reliably on Linux."""
+    if not HAS_PYMUPDF or not HAS_LLAMA:
+        return []
+    documents = []
+    try:
+        doc = fitz.open(file_path)
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            text = page.get_text("text")
+            if text and text.strip():
+                metadata = {
+                    "file_path": str(Path(file_path).resolve()),
+                    "file_name": Path(file_path).name,
+                    "page_label": str(page_num + 1),
+                    "file_type": "application/pdf",
+                }
+                documents.append(Document(text=text, metadata=metadata))
+        doc.close()
+    except Exception as e:
+        print(f"  ✗ PyMuPDF error on {file_path}: {e}")
+    return documents
+
+
+def _load_folder_documents(folder_path: str) -> list:
+    """Load documents from a folder, using PyMuPDF for PDFs and SimpleDirectoryReader for the rest."""
+    p = Path(folder_path).resolve()
+    if not p.is_dir():
+        return []
+
+    documents = []
+
+    if HAS_PYMUPDF:
+        # Collect PDF files separately for PyMuPDF processing
+        pdf_files = list(p.rglob("*.pdf")) + list(p.rglob("*.PDF"))
+        non_pdf_extensions = set()
+        for f in p.rglob("*"):
+            if f.is_file() and f.suffix.lower() != ".pdf":
+                non_pdf_extensions.add(f.suffix)
+
+        # Process PDFs with PyMuPDF
+        for pdf_file in pdf_files:
+            print(f"    📄 PDF (PyMuPDF): {pdf_file.name}")
+            pdf_docs = _read_pdf_with_pymupdf(str(pdf_file))
+            documents.extend(pdf_docs)
+
+        # Process non-PDF files with SimpleDirectoryReader
+        if non_pdf_extensions:
+            try:
+                excluded = ["*.pdf", "*.PDF"]
+                reader = SimpleDirectoryReader(
+                    str(p), recursive=True,
+                    exclude=excluded,
+                )
+                non_pdf_docs = reader.load_data()
+                documents.extend(non_pdf_docs)
+            except Exception as e:
+                print(f"  ✗ Error reading non-PDF files in {p}: {e}")
+    else:
+        # Fallback: use SimpleDirectoryReader for everything
+        try:
+            reader = SimpleDirectoryReader(str(p), recursive=True)
+            documents.extend(reader.load_data())
+        except Exception as e:
+            print(f"  ✗ Error reading {p}: {e}")
+
+    return documents
 
 app = Flask(__name__)
 CORS(app, origins="*")
