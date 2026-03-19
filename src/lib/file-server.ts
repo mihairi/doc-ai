@@ -77,17 +77,27 @@ function networkErrorMessage(err: unknown): string {
 }
 
 export async function fetchIndexStatus(url: string): Promise<IndexStatus> {
-  const res = await fetch(`${baseUrl(url)}/api/status`);
-  if (!res.ok) throw new Error(`Server error: ${res.status}`);
-  return res.json();
+  try {
+    const res = await fetch(`${baseUrl(url)}/api/status`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+    return res.json();
+  } catch (err) {
+    throw new Error(networkErrorMessage(err));
+  }
 }
 
 export async function triggerIndexing(url: string): Promise<string> {
-  const res = await fetch(`${baseUrl(url)}/api/index`, { method: 'POST' });
-  const data = await res.json();
-  if (!res.ok && res.status === 409) return 'already_indexing';
-  if (!res.ok) throw new Error(data.error || `Server error: ${res.status}`);
-  return data.status;
+  try {
+    const res = await fetch(`${baseUrl(url)}/api/index`, { method: 'POST', signal: AbortSignal.timeout(10000) });
+    const data = await res.json();
+    if (!res.ok && res.status === 409) return 'already_indexing';
+    if (!res.ok) throw new Error(data.error || `Server error: ${res.status}`);
+    return data.status;
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Nu se poate')) throw err;
+    if (err instanceof Error && err.message.startsWith('Conexiunea')) throw err;
+    throw new Error(networkErrorMessage(err));
+  }
 }
 
 export async function queryIndex(url: string, question: string, topK = 6): Promise<RetrievalResult[]> {
