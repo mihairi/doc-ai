@@ -66,6 +66,16 @@ export async function checkFileServerHealth(url: string): Promise<{ ok: boolean;
   }
 }
 
+function networkErrorMessage(err: unknown): string {
+  if (err instanceof TypeError) {
+    return 'Nu se poate conecta la server. Verifică dacă serverul Python rulează și dacă adresa/portul sunt corecte.';
+  }
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return 'Conexiunea a expirat (timeout). Serverul nu răspunde.';
+  }
+  return (err as any)?.message || 'Eroare necunoscută';
+}
+
 export async function fetchIndexStatus(url: string): Promise<IndexStatus> {
   const res = await fetch(`${baseUrl(url)}/api/status`);
   if (!res.ok) throw new Error(`Server error: ${res.status}`);
