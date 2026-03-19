@@ -66,39 +66,69 @@ export async function checkFileServerHealth(url: string): Promise<{ ok: boolean;
   }
 }
 
+function networkErrorMessage(err: unknown): string {
+  if (err instanceof TypeError) {
+    return 'Nu se poate conecta la server. Verifică dacă serverul Python rulează și dacă adresa/portul sunt corecte.';
+  }
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return 'Conexiunea a expirat (timeout). Serverul nu răspunde.';
+  }
+  return (err as any)?.message || 'Eroare necunoscută';
+}
+
 export async function fetchIndexStatus(url: string): Promise<IndexStatus> {
-  const res = await fetch(`${baseUrl(url)}/api/status`);
-  if (!res.ok) throw new Error(`Server error: ${res.status}`);
-  return res.json();
+  try {
+    const res = await fetch(`${baseUrl(url)}/api/status`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+    return res.json();
+  } catch (err) {
+    throw new Error(networkErrorMessage(err));
+  }
 }
 
 export async function triggerIndexing(url: string): Promise<string> {
-  const res = await fetch(`${baseUrl(url)}/api/index`, { method: 'POST' });
-  const data = await res.json();
-  if (!res.ok && res.status === 409) return 'already_indexing';
-  if (!res.ok) throw new Error(data.error || `Server error: ${res.status}`);
-  return data.status;
+  try {
+    const res = await fetch(`${baseUrl(url)}/api/index`, { method: 'POST', signal: AbortSignal.timeout(10000) });
+    const data = await res.json();
+    if (!res.ok && res.status === 409) return 'already_indexing';
+    if (!res.ok) throw new Error(data.error || `Server error: ${res.status}`);
+    return data.status;
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Nu se poate')) throw err;
+    if (err instanceof Error && err.message.startsWith('Conexiunea')) throw err;
+    throw new Error(networkErrorMessage(err));
+  }
 }
 
 export async function queryIndex(url: string, question: string, topK = 6): Promise<RetrievalResult[]> {
-  const res = await fetch(`${baseUrl(url)}/api/query`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, top_k: topK }),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `Server error: ${res.status}`);
+  try {
+    const res = await fetch(`${baseUrl(url)}/api/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, top_k: topK }),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Server error: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.results || [];
+  } catch (err) {
+    if (err instanceof Error && (err.message.startsWith('Nu se poate') || err.message.startsWith('Conexiunea'))) throw err;
+    throw new Error(networkErrorMessage(err));
   }
-  const data = await res.json();
-  return data.results || [];
 }
 
 export async function fetchRemoteFolders(url: string): Promise<RemoteFolder[]> {
-  const res = await fetch(`${baseUrl(url)}/api/folders`);
-  if (!res.ok) throw new Error(`Server error: ${res.status}`);
-  const data = await res.json();
-  return data.folders || [];
+  try {
+    const res = await fetch(`${baseUrl(url)}/api/folders`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+    const data = await res.json();
+    return data.folders || [];
+  } catch (err) {
+    throw new Error(networkErrorMessage(err));
+  }
 }
 
 export async function verifyPasswordOnServer(url: string, password: string): Promise<boolean> {
