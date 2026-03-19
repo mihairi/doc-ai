@@ -290,7 +290,8 @@ def index():
 @app.route("/api/file", methods=["GET"])
 def serve_file():
     """Serve a document file by its path (must be within configured folders)."""
-    file_path = request.args.get("path", "")
+    from urllib.parse import unquote
+    file_path = unquote(request.args.get("path", ""))
     if not file_path:
         return jsonify({"error": "Missing 'path' parameter"}), 400
 
@@ -298,14 +299,23 @@ def serve_file():
     # Security: only serve files within configured folders
     allowed = False
     for folder in _folders:
-        if str(resolved).startswith(str(Path(folder).resolve())):
-            allowed = True
-            break
+        folder_resolved = str(Path(folder).resolve())
+        file_resolved = str(resolved)
+        # Use os.path.commonpath for reliable Linux path comparison
+        try:
+            common = os.path.commonpath([folder_resolved, file_resolved])
+            if common == folder_resolved:
+                allowed = True
+                break
+        except ValueError:
+            continue
     if not allowed or not resolved.is_file():
         return jsonify({"error": "File not found or not allowed"}), 404
 
+    import mimetypes
+    mime_type = mimetypes.guess_type(str(resolved))[0] or 'application/octet-stream'
     from flask import send_file
-    return send_file(str(resolved))
+    return send_file(str(resolved), mimetype=mime_type)
 
 
 @app.route("/api/query", methods=["POST"])
