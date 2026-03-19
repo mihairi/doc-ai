@@ -207,11 +207,9 @@ def _do_index():
                 print(f"  ✗ Skipping non-existent folder: {p}")
                 continue
             print(f"  ✓ Reading: {p}")
-            try:
-                reader = SimpleDirectoryReader(str(p), recursive=True)
-                documents.extend(reader.load_data())
-            except Exception as e:
-                print(f"  ✗ Error reading {p}: {e}")
+            folder_docs = _load_folder_documents(str(p))
+            documents.extend(folder_docs)
+            print(f"    → {len(folder_docs)} document chunks loaded")
 
         if not documents:
             _index_error = "No documents found in configured folders"
