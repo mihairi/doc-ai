@@ -101,17 +101,23 @@ export async function triggerIndexing(url: string): Promise<string> {
 }
 
 export async function queryIndex(url: string, question: string, topK = 6): Promise<RetrievalResult[]> {
-  const res = await fetch(`${baseUrl(url)}/api/query`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, top_k: topK }),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `Server error: ${res.status}`);
+  try {
+    const res = await fetch(`${baseUrl(url)}/api/query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, top_k: topK }),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Server error: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.results || [];
+  } catch (err) {
+    if (err instanceof Error && (err.message.startsWith('Nu se poate') || err.message.startsWith('Conexiunea'))) throw err;
+    throw new Error(networkErrorMessage(err));
   }
-  const data = await res.json();
-  return data.results || [];
 }
 
 export async function fetchRemoteFolders(url: string): Promise<RemoteFolder[]> {
