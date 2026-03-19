@@ -3,7 +3,7 @@
 DocBot File Server - LlamaIndex-powered RAG companion for DocBot.
 
 Usage:
-    pip install llama-index llama-index-embeddings-huggingface flask flask-cors
+    pip install llama-index llama-index-embeddings-huggingface flask flask-cors pymupdf
     python docbot-fileserver.py --folders /path/to/docs
 
 Endpoints:
