@@ -155,12 +155,20 @@ def _convert_html_to_pdf(html_path: str) -> str | None:
         print(f"    ⚠ pdfkit not available, skipping HTML→PDF: {html_path}")
         return None
     try:
+        # Set XDG_RUNTIME_DIR to avoid Qt/wkhtmltopdf warnings on headless Linux
+        if "XDG_RUNTIME_DIR" not in os.environ:
+            os.environ["XDG_RUNTIME_DIR"] = "/tmp/runtime-docbot"
+            os.makedirs("/tmp/runtime-docbot", exist_ok=True)
+
         pdf_path = str(Path(html_path).with_suffix(".pdf"))
         options = {
             "encoding": "UTF-8",
             "no-images": "",
             "quiet": "",
             "disable-javascript": "",
+            "no-outline": "",
+            "load-error-handling": "ignore",
+            "load-media-error-handling": "ignore",
         }
         pdfkit.from_file(html_path, pdf_path, options=options)
         if Path(pdf_path).exists() and Path(pdf_path).stat().st_size > 0:
