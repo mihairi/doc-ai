@@ -275,8 +275,10 @@ def _convert_html_to_pdf(html_path: str) -> str | None:
                 pass
 
 
+SKIP_IMAGE_EXTENSIONS = {".gif", ".jpg", ".jpeg", ".png", ".svg"}
+
 def _load_folder_documents(folder_path: str) -> list:
-    """Load documents from a folder. Converts HTML to PDF first, then uses PyMuPDF for PDFs and SimpleDirectoryReader for the rest."""
+    """Load documents from a folder. Converts HTML to PDF first, then uses PyMuPDF for PDFs and SimpleDirectoryReader for the rest. Skips image files."""
     p = Path(folder_path).resolve()
     if not p.is_dir():
         return []
@@ -292,11 +294,11 @@ def _load_folder_documents(folder_path: str) -> list:
     documents = []
 
     if HAS_PYMUPDF:
-        # Collect PDF files (including newly converted ones)
-        pdf_files = list(p.rglob("*.pdf")) + list(p.rglob("*.PDF"))
+        # Collect PDF files (including newly converted ones), skip images
+        pdf_files = [f for f in (list(p.rglob("*.pdf")) + list(p.rglob("*.PDF"))) if f.suffix.lower() not in SKIP_IMAGE_EXTENSIONS]
         non_pdf_extensions = set()
         for f in p.rglob("*"):
-            if f.is_file() and f.suffix.lower() not in (".pdf", ".html", ".htm"):
+            if f.is_file() and f.suffix.lower() not in (".pdf", ".html", ".htm") and f.suffix.lower() not in SKIP_IMAGE_EXTENSIONS:
                 non_pdf_extensions.add(f.suffix)
 
         # Process PDFs with PyMuPDF
@@ -308,7 +310,7 @@ def _load_folder_documents(folder_path: str) -> list:
         # Process non-PDF, non-HTML files with SimpleDirectoryReader
         if non_pdf_extensions:
             try:
-                excluded = ["*.pdf", "*.PDF", "*.html", "*.htm", "*.HTML", "*.HTM"]
+                excluded = ["*.pdf", "*.PDF", "*.html", "*.htm", "*.HTML", "*.HTM"] + [f"*{ext}" for ext in SKIP_IMAGE_EXTENSIONS]
                 reader = SimpleDirectoryReader(
                     str(p), recursive=True,
                     exclude=excluded,
@@ -318,9 +320,10 @@ def _load_folder_documents(folder_path: str) -> list:
             except Exception as e:
                 print(f"  ✗ Error reading non-PDF files in {p}: {e}")
     else:
-        # Fallback: use SimpleDirectoryReader for everything
+        # Fallback: use SimpleDirectoryReader for everything, skip images
         try:
-            reader = SimpleDirectoryReader(str(p), recursive=True)
+            excluded_fallback = [f"*{ext}" for ext in SKIP_IMAGE_EXTENSIONS]
+            reader = SimpleDirectoryReader(str(p), recursive=True, exclude=excluded_fallback)
             documents.extend(reader.load_data())
         except Exception as e:
             print(f"  ✗ Error reading {p}: {e}")
