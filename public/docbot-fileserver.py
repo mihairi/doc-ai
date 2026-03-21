@@ -156,9 +156,11 @@ def _convert_html_to_pdf(html_path: str) -> str | None:
         return None
     try:
         # Set XDG_RUNTIME_DIR to avoid Qt/wkhtmltopdf warnings on headless Linux
+        runtime_dir = f"/tmp/runtime-docbot-{os.getuid()}"
         if "XDG_RUNTIME_DIR" not in os.environ:
-            os.environ["XDG_RUNTIME_DIR"] = "/tmp/runtime-docbot"
-            os.makedirs("/tmp/runtime-docbot", exist_ok=True)
+            os.makedirs(runtime_dir, mode=0o700, exist_ok=True)
+            os.chmod(runtime_dir, 0o700)
+            os.environ["XDG_RUNTIME_DIR"] = runtime_dir
 
         pdf_path = str(Path(html_path).with_suffix(".pdf"))
         options = {
