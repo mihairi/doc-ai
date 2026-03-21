@@ -16,11 +16,14 @@ Endpoints:
 """
 
 import os
+import re
 import sys
 import json
 import time
 import argparse
 import threading
+import tempfile
+import subprocess
 from pathlib import Path
 
 _password_file = ".docbot-password"
@@ -149,11 +152,60 @@ def _read_pdf_with_pymupdf(file_path: str) -> list:
     return documents
 
 
+def _prepare_html_for_pdf(html_path: str) -> str:
+    """Create a temporary HTML file with a local base URL and sanitized protocols for wkhtmltopdf."""
+    source_path = Path(html_path).resolve()
+    html = source_path.read_text(encoding="utf-8", errors="ignore")
+    base_href = source_path.parent.as_uri().rstrip("/") + "/"
+
+    if not re.search(r"<base\s+href=", html, flags=re.IGNORECASE):
+        head_match = re.search(r"<head[^>]*>", html, flags=re.IGNORECASE)
+        base_tag = f'<base href="{base_href}">'
+        if head_match:
+            insert_at = head_match.end()
+            html = html[:insert_at] + base_tag + html[insert_at:]
+        else:
+            html = f"<head>{base_tag}</head>{html}"
+
+    attr_pattern = re.compile(r'(?P<prefix>\b(?:src|href)\s*=\s*)(?P<quote>["\'])(?P<value>.*?)(?P=quote)', re.IGNORECASE)
+
+    def sanitize_attr(match: re.Match[str]) -> str:
+        value = match.group("value").strip()
+        if not value:
+            return match.group(0)
+
+        allowed_prefixes = (
+            "#",
+            "/",
+            "./",
+            "../",
+            "http://",
+            "https://",
+            "file://",
+            "data:",
+            "about:",
+        )
+        if value.startswith(allowed_prefixes):
+            return match.group(0)
+
+        if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", value):
+            return f'{match.group("prefix")}{match.group("quote")}#{match.group("quote")}'
+
+        return match.group(0)
+
+    html = attr_pattern.sub(sanitize_attr, html)
+
+    with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as tmp:
+        tmp.write(html)
+        return tmp.name
+
+
 def _convert_html_to_pdf(html_path: str) -> str | None:
     """Convert an HTML file to PDF using pdfkit (wkhtmltopdf). Returns PDF path or None."""
     if not HAS_PDFKIT:
         print(f"    ⚠ pdfkit not available, skipping HTML→PDF: {html_path}")
         return None
+    prepared_html_path = None
     try:
         # Set XDG_RUNTIME_DIR to avoid Qt/wkhtmltopdf warnings on headless Linux
         runtime_dir = f"/tmp/runtime-docbot-{os.getuid()}"
@@ -163,16 +215,40 @@ def _convert_html_to_pdf(html_path: str) -> str | None:
             os.environ["XDG_RUNTIME_DIR"] = runtime_dir
 
         pdf_path = str(Path(html_path).with_suffix(".pdf"))
+        prepared_html_path = _prepare_html_for_pdf(html_path)
+        parent_dir = str(Path(html_path).resolve().parent)
         options = {
             "encoding": "UTF-8",
             "no-images": "",
             "quiet": "",
             "disable-javascript": "",
             "no-outline": "",
+            "enable-local-file-access": "",
+            "allow": parent_dir,
             "load-error-handling": "ignore",
             "load-media-error-handling": "ignore",
         }
-        pdfkit.from_file(html_path, pdf_path, options=options)
+        try:
+            pdfkit.from_file(prepared_html_path, pdf_path, options=options)
+        except Exception as first_error:
+            cmd = [
+                "wkhtmltopdf",
+                "--encoding", "UTF-8",
+                "--no-images",
+                "--quiet",
+                "--disable-javascript",
+                "--no-outline",
+                "--enable-local-file-access",
+                "--allow", parent_dir,
+                "--load-error-handling", "ignore",
+                "--load-media-error-handling", "ignore",
+                prepared_html_path,
+                pdf_path,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                stderr = (result.stderr or result.stdout or "").strip()
+                raise RuntimeError(stderr or str(first_error)) from first_error
         if Path(pdf_path).exists() and Path(pdf_path).stat().st_size > 0:
             print(f"    ✓ HTML→PDF: {Path(html_path).name} → {Path(pdf_path).name}")
             # Remove original HTML
@@ -191,6 +267,12 @@ def _convert_html_to_pdf(html_path: str) -> str | None:
     except Exception as e:
         print(f"    ✗ HTML→PDF error for {html_path}: {e}")
         return None
+    finally:
+        if prepared_html_path and Path(prepared_html_path).exists():
+            try:
+                os.remove(prepared_html_path)
+            except Exception:
+                pass
 
 
 def _load_folder_documents(folder_path: str) -> list:
