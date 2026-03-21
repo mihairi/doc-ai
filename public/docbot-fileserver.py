@@ -310,7 +310,7 @@ def _load_folder_documents(folder_path: str) -> list:
         # Process non-PDF, non-HTML files with SimpleDirectoryReader
         if non_pdf_extensions:
             try:
-                excluded = ["*.pdf", "*.PDF", "*.html", "*.htm", "*.HTML", "*.HTM"]
+                excluded = ["*.pdf", "*.PDF", "*.html", "*.htm", "*.HTML", "*.HTM"] + [f"*{ext}" for ext in SKIP_IMAGE_EXTENSIONS]
                 reader = SimpleDirectoryReader(
                     str(p), recursive=True,
                     exclude=excluded,
@@ -320,9 +320,10 @@ def _load_folder_documents(folder_path: str) -> list:
             except Exception as e:
                 print(f"  ✗ Error reading non-PDF files in {p}: {e}")
     else:
-        # Fallback: use SimpleDirectoryReader for everything
+        # Fallback: use SimpleDirectoryReader for everything, skip images
         try:
-            reader = SimpleDirectoryReader(str(p), recursive=True)
+            excluded_fallback = [f"*{ext}" for ext in SKIP_IMAGE_EXTENSIONS]
+            reader = SimpleDirectoryReader(str(p), recursive=True, exclude=excluded_fallback)
             documents.extend(reader.load_data())
         except Exception as e:
             print(f"  ✗ Error reading {p}: {e}")
