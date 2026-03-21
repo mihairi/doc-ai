@@ -149,20 +149,62 @@ def _read_pdf_with_pymupdf(file_path: str) -> list:
     return documents
 
 
+def _convert_html_to_pdf(html_path: str) -> str | None:
+    """Convert an HTML file to PDF using pdfkit (wkhtmltopdf). Returns PDF path or None."""
+    if not HAS_PDFKIT:
+        print(f"    ⚠ pdfkit not available, skipping HTML→PDF: {html_path}")
+        return None
+    try:
+        pdf_path = str(Path(html_path).with_suffix(".pdf"))
+        options = {
+            "encoding": "UTF-8",
+            "no-images": "",
+            "quiet": "",
+            "disable-javascript": "",
+        }
+        pdfkit.from_file(html_path, pdf_path, options=options)
+        if Path(pdf_path).exists() and Path(pdf_path).stat().st_size > 0:
+            print(f"    ✓ HTML→PDF: {Path(html_path).name} → {Path(pdf_path).name}")
+            # Remove original HTML
+            try:
+                os.remove(html_path)
+                print(f"    🗑 Removed HTML: {Path(html_path).name}")
+            except Exception as e:
+                print(f"    ⚠ Could not remove HTML {html_path}: {e}")
+            return pdf_path
+        else:
+            print(f"    ✗ HTML→PDF conversion produced empty file: {html_path}")
+            # Clean up empty PDF
+            if Path(pdf_path).exists():
+                os.remove(pdf_path)
+            return None
+    except Exception as e:
+        print(f"    ✗ HTML→PDF error for {html_path}: {e}")
+        return None
+
+
 def _load_folder_documents(folder_path: str) -> list:
-    """Load documents from a folder, using PyMuPDF for PDFs and SimpleDirectoryReader for the rest."""
+    """Load documents from a folder. Converts HTML to PDF first, then uses PyMuPDF for PDFs and SimpleDirectoryReader for the rest."""
     p = Path(folder_path).resolve()
     if not p.is_dir():
         return []
 
+    # Phase 1: Convert all HTML/HTM files to PDF
+    html_files = list(p.rglob("*.html")) + list(p.rglob("*.htm")) + list(p.rglob("*.HTML")) + list(p.rglob("*.HTM"))
+    if html_files:
+        print(f"    🔄 Converting {len(html_files)} HTML file(s) to PDF...")
+        for html_file in html_files:
+            _convert_html_to_pdf(str(html_file))
+
+    # Phase 2: Load documents (now all HTMLs are PDFs)
     documents = []
 
     if HAS_PYMUPDF:
-        # Collect PDF files separately for PyMuPDF processing
+        # Collect PDF files (including newly converted ones)
         pdf_files = list(p.rglob("*.pdf")) + list(p.rglob("*.PDF"))
         non_pdf_extensions = set()
         for f in p.rglob("*"):
-            if f.is_file() and f.suffix.lower() != ".pdf":
+            if f.is_file() and f.suffix.lower() not in (".pdf", ".html", ".htm"):
                 non_pdf_extensions.add(f.suffix)
 
         # Process PDFs with PyMuPDF
@@ -171,10 +213,10 @@ def _load_folder_documents(folder_path: str) -> list:
             pdf_docs = _read_pdf_with_pymupdf(str(pdf_file))
             documents.extend(pdf_docs)
 
-        # Process non-PDF files with SimpleDirectoryReader
+        # Process non-PDF, non-HTML files with SimpleDirectoryReader
         if non_pdf_extensions:
             try:
-                excluded = ["*.pdf", "*.PDF"]
+                excluded = ["*.pdf", "*.PDF", "*.html", "*.htm", "*.HTML", "*.HTM"]
                 reader = SimpleDirectoryReader(
                     str(p), recursive=True,
                     exclude=excluded,
