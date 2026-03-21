@@ -245,7 +245,11 @@ def _convert_html_to_pdf(html_path: str) -> str | None:
                 prepared_html_path,
                 pdf_path,
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            except subprocess.TimeoutExpired:
+                print(f"    ⚠ HTML→PDF timeout (120s): {Path(html_path).name} — skipping")
+                return None
             if result.returncode != 0:
                 stderr = (result.stderr or result.stdout or "").strip()
                 raise RuntimeError(stderr or str(first_error)) from first_error
