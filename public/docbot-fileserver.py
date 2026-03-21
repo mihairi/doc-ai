@@ -86,8 +86,18 @@ try:
     from flask_cors import CORS
 except ImportError:
     print("Missing dependencies. Install with:")
-    print("  pip install flask flask-cors llama-index llama-index-embeddings-huggingface pymupdf")
+    print("  pip install flask flask-cors llama-index llama-index-embeddings-huggingface pymupdf pdfkit")
+    print("  apt install wkhtmltopdf")
     sys.exit(1)
+
+# HTML to PDF conversion
+HAS_PDFKIT = False
+try:
+    import pdfkit
+    HAS_PDFKIT = True
+except ImportError:
+    print("Warning: pdfkit not installed. HTML files will not be converted to PDF.")
+    print("  pip install pdfkit && apt install wkhtmltopdf")
 
 # PyMuPDF-based PDF reader for proper text extraction on Linux
 HAS_PYMUPDF = False
