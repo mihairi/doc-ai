@@ -135,6 +135,8 @@ export function ChatInterface({ config, documents, feedbackEnabled = true }: Cha
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [queryRewrite, setQueryRewrite] = useState(false);
   const [ratings, setRatings] = useState<Record<number, 'good' | 'bad'>>({});
+  const [commentOpen, setCommentOpen] = useState<number | null>(null);
+  const [commentText, setCommentText] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
