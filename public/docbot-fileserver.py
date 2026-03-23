@@ -219,7 +219,7 @@ def _convert_html_to_pdf(html_path: str) -> str | None:
         parent_dir = str(Path(html_path).resolve().parent)
         options = {
             "encoding": "UTF-8",
-            #"no-images": "",
+            "no-images": "",
             "quiet": "",
             "disable-javascript": "",
             "no-outline": "",
@@ -228,24 +228,31 @@ def _convert_html_to_pdf(html_path: str) -> str | None:
             "load-error-handling": "ignore",
             "load-media-error-handling": "ignore",
         }
-        cmd = [
-            "wkhtmltopdf",
-            "--encoding", "UTF-8",
-            #"--no-images",
-            "--quiet",
-            "--disable-javascript",
-            "--no-outline",
-            "--enable-local-file-access",
-            "--allow", parent_dir,
-            "--load-error-handling", "ignore",
-            "--load-media-error-handling", "ignore",
-            prepared_html_path,
-            pdf_path,
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-        if result.returncode != 0:
-            stderr = (result.stderr or result.stdout or "").strip()
-            raise RuntimeError(stderr or str(first_error)) from first_error
+        try:
+            pdfkit.from_file(prepared_html_path, pdf_path, options=options)
+        except Exception as first_error:
+            cmd = [
+                "wkhtmltopdf",
+                "--encoding", "UTF-8",
+                "--no-images",
+                "--quiet",
+                "--disable-javascript",
+                "--no-outline",
+                "--enable-local-file-access",
+                "--allow", parent_dir,
+                "--load-error-handling", "ignore",
+                "--load-media-error-handling", "ignore",
+                prepared_html_path,
+                pdf_path,
+            ]
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            except subprocess.TimeoutExpired:
+                print(f"    ⚠ HTML→PDF timeout (120s): {Path(html_path).name} — skipping")
+                return None
+            if result.returncode != 0:
+                stderr = (result.stderr or result.stdout or "").strip()
+                raise RuntimeError(stderr or str(first_error)) from first_error
         if Path(pdf_path).exists() and Path(pdf_path).stat().st_size > 0:
             print(f"    ✓ HTML→PDF: {Path(html_path).name} → {Path(pdf_path).name}")
             # Remove original HTML
@@ -550,6 +557,57 @@ def auth_change_password():
     if len(new_pass) < 4:
         return jsonify({"error": "Password too short (min 4 chars)"}), 400
     _write_password(new_pass)
+    return jsonify({"success": True})
+
+
+# ── Feedback persistence ────────────────────────────────────────────
+_feedback_file = ".docbot-feedback.json"
+
+def _read_feedback() -> list:
+    p = Path(_feedback_file)
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+def _write_feedback(entries: list):
+    Path(_feedback_file).write_text(json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+@app.route("/api/feedback", methods=["GET"])
+def feedback_list():
+    return jsonify({"entries": _read_feedback()})
+
+
+@app.route("/api/feedback", methods=["POST"])
+def feedback_save():
+    entry = request.get_json()
+    if not entry or not entry.get("id"):
+        return jsonify({"error": "Invalid feedback entry"}), 400
+    entries = _read_feedback()
+    # Upsert by id
+    entries = [e for e in entries if e.get("id") != entry["id"]]
+    entries.append(entry)
+    _write_feedback(entries)
+    return jsonify({"success": True})
+
+
+@app.route("/api/feedback/<entry_id>", methods=["DELETE"])
+def feedback_delete(entry_id):
+    entries = _read_feedback()
+    before = len(entries)
+    entries = [e for e in entries if e.get("id") != entry_id]
+    if len(entries) == before:
+        return jsonify({"error": "Not found"}), 404
+    _write_feedback(entries)
+    return jsonify({"success": True})
+
+
+@app.route("/api/feedback/clear", methods=["DELETE"])
+def feedback_clear():
+    _write_feedback([])
     return jsonify({"success": True})
 
 
