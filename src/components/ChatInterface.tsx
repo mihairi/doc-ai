@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { DocEntry, buildContextPrompt, getImageEntries, loadDocumentById } from '@/lib/document-store';
 import { loadFileServerConfig, queryIndex } from '@/lib/file-server';
 import { useToast } from '@/hooks/use-toast';
+import { saveFeedback, buildFeedbackPrompt, FeedbackEntry } from '@/lib/feedback-store';
 
 interface DisplayMessage {
   role: 'user' | 'assistant';
