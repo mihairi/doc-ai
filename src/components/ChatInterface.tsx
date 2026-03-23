@@ -133,8 +133,35 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [queryRewrite, setQueryRewrite] = useState(false);
+  const [ratings, setRatings] = useState<Record<number, 'good' | 'bad'>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  const handleRate = useCallback(async (msgIndex: number, rating: 'good' | 'bad') => {
+    // Find the user question preceding this assistant message
+    const assistantMsg = messages[msgIndex];
+    if (!assistantMsg || assistantMsg.role !== 'assistant') return;
+
+    let question = '';
+    for (let j = msgIndex - 1; j >= 0; j--) {
+      if (messages[j].role === 'user') {
+        question = messages[j].content;
+        break;
+      }
+    }
+
+    const entry: FeedbackEntry = {
+      id: `fb-${Date.now()}-${msgIndex}`,
+      question,
+      answer: assistantMsg.content,
+      rating,
+      createdAt: Date.now(),
+    };
+
+    await saveFeedback(entry);
+    setRatings(prev => ({ ...prev, [msgIndex]: rating }));
+    toast({ title: rating === 'good' ? '👍 Mulțumim!' : '👎 Vom îmbunătăți', description: 'Feedback-ul a fost salvat și va fi folosit pentru răspunsuri viitoare.' });
+  }, [messages, toast]);
 
   useEffect(() => {
     if (scrollRef.current) {
