@@ -21,6 +21,7 @@ interface ChatInterfaceProps {
   config: LLMConfig;
   documents: DocEntry[];
   feedbackEnabled?: boolean;
+  feedbackMaxChars?: number;
 }
 
 
