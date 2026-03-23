@@ -140,8 +140,7 @@ export function ChatInterface({ config, documents, feedbackEnabled = true }: Cha
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
-  const handleRate = useCallback(async (msgIndex: number, rating: 'good' | 'bad') => {
-    // Find the user question preceding this assistant message
+  const handleRate = useCallback(async (msgIndex: number, rating: 'good' | 'bad', comment?: string) => {
     const assistantMsg = messages[msgIndex];
     if (!assistantMsg || assistantMsg.role !== 'assistant') return;
 
@@ -158,12 +157,15 @@ export function ChatInterface({ config, documents, feedbackEnabled = true }: Cha
       question,
       answer: assistantMsg.content,
       rating,
+      comment: comment?.trim() || undefined,
       createdAt: Date.now(),
     };
 
     await saveFeedback(entry);
     setRatings(prev => ({ ...prev, [msgIndex]: rating }));
-    toast({ title: rating === 'good' ? '👍 Mulțumim!' : '👎 Vom îmbunătăți', description: 'Feedback-ul a fost salvat și va fi folosit pentru răspunsuri viitoare.' });
+    setCommentOpen(null);
+    setCommentText('');
+    toast({ title: rating === 'good' ? '👍 Mulțumim!' : '👎 Vom îmbunătăți', description: 'Feedback-ul a fost salvat.' });
   }, [messages, toast]);
 
   useEffect(() => {
