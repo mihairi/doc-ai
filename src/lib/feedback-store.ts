@@ -8,6 +8,7 @@ export interface FeedbackEntry {
   question: string;
   answer: string;
   rating: 'good' | 'bad';
+  comment?: string;
   createdAt: number;
 }
 
@@ -90,14 +91,14 @@ export async function buildFeedbackPrompt(): Promise<string> {
   if (good.length > 0) {
     prompt += '\nExemple de răspunsuri BUNE (imită stilul și nivelul de detaliu):\n';
     good.forEach((f, i) => {
-      prompt += `\n✅ Exemplu ${i + 1}:\nÎntrebare: ${f.question.slice(0, 200)}\nRăspuns bun: ${f.answer.slice(0, 500)}\n`;
+      prompt += `\n✅ Exemplu ${i + 1}:\nÎntrebare: ${f.question.slice(0, 200)}\nRăspuns bun: ${f.answer.slice(0, 500)}${f.comment ? `\nComentariu utilizator: ${f.comment.slice(0, 200)}` : ''}\n`;
     });
   }
 
   if (bad.length > 0) {
     prompt += '\nExemple de răspunsuri RELE (evită aceste tipuri de răspunsuri):\n';
     bad.forEach((f, i) => {
-      prompt += `\n❌ Exemplu ${i + 1}:\nÎntrebare: ${f.question.slice(0, 200)}\nRăspuns de evitat: ${f.answer.slice(0, 500)}\n`;
+      prompt += `\n❌ Exemplu ${i + 1}:\nÎntrebare: ${f.question.slice(0, 200)}\nRăspuns de evitat: ${f.answer.slice(0, 500)}${f.comment ? `\nComentariu utilizator: ${f.comment.slice(0, 200)}` : ''}\n`;
     });
   }
 
