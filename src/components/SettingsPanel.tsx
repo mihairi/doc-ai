@@ -506,6 +506,9 @@ export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigCh
             </div>
           </div>
 
+          {/* Feedback Management */}
+          <FeedbackPanel appConfig={appConfig} onAppConfigChange={onAppConfigChange} />
+
           <Button variant="secondary" size="sm" className="w-full" onClick={() => setOpen(false)}>
             <Check className="h-3.5 w-3.5 mr-1.5" /> Gata
           </Button>
