@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Settings, RefreshCw, Check, Wifi, WifiOff, Server, FolderOpen, Database, Zap, FileText, Cpu, Palette, Type, KeyRound } from 'lucide-react';
+import { FeedbackPanel } from '@/components/FeedbackPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
