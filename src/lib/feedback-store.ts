@@ -12,6 +12,11 @@ export interface FeedbackEntry {
   createdAt: number;
 }
 
+export interface FeedbackPromptMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 const DB_NAME = 'docbot-feedback';
 const DB_VERSION = 1;
 const STORE_NAME = 'feedback';
@@ -70,66 +75,72 @@ export async function clearAllFeedback(): Promise<void> {
   });
 }
 
-/**
- * Build a prompt section from stored feedback to guide the model.
- * Includes the most recent good and bad examples (max ~10 total).
- */
-export async function buildFeedbackPrompt(maxChars: number = 1500): Promise<string> {
-  const all = await loadAllFeedback();
-  if (all.length === 0) return '';
+function compactText(value: string, maxChars: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxChars) return normalized;
+  return normalized.slice(0, Math.max(0, maxChars - 1)).trimEnd() + '…';
+}
 
-  // Sort by newest first
+/**
+ * Builds few-shot feedback messages injected immediately before the current user question.
+ * Negative feedback is translated into explicit avoid/do rules, while positive feedback is
+ * added as user/assistant example pairs. Entries are added one by one until the limit is hit.
+ */
+export async function buildFeedbackMessages(maxChars: number = 1500): Promise<FeedbackPromptMessage[]> {
+  const all = await loadAllFeedback();
+  if (all.length === 0 || maxChars < 120) return [];
+
   all.sort((a, b) => b.createdAt - a.createdAt);
 
   const good = all.filter(f => f.rating === 'good').slice(0, 5);
   const bad = all.filter(f => f.rating === 'bad').slice(0, 5);
 
-  if (good.length === 0 && bad.length === 0) return '';
+  const messages: FeedbackPromptMessage[] = [];
+  let usedChars = 0;
 
-  const header = '\n\n--- FEEDBACK DIN CONVERSAȚII ANTERIOARE (folosește pentru a îmbunătăți calitatea răspunsurilor) ---\n';
-  const footer = '\n--- SFÂRȘIT FEEDBACK ---\n';
-  const goodHeader = '\nExemple de răspunsuri BUNE (imită stilul și nivelul de detaliu):\n';
-  const badHeader = '\nExemple de răspunsuri RELE (evită aceste tipuri de răspunsuri):\n';
-
-  let prompt = header;
-  let count = 0;
-
-  const formatEntry = (f: FeedbackEntry, i: number, isGood: boolean): string => {
-    const icon = isGood ? '✅' : '❌';
-    const label = isGood ? 'Răspuns bun' : 'Răspuns de evitat';
-    return `\n${icon} Exemplu ${i + 1}:\nÎntrebare: ${f.question.slice(0, 200)}\n${label}: ${f.answer.slice(0, 500)}${f.comment ? `\nComentariu utilizator: ${f.comment.slice(0, 200)}` : ''}\n`;
+  const tryAddPair = (userContent: string, assistantContent: string) => {
+    const pairChars = userContent.length + assistantContent.length;
+    if (usedChars + pairChars > maxChars) return false;
+    messages.push(
+      { role: 'user', content: userContent },
+      { role: 'assistant', content: assistantContent }
+    );
+    usedChars += pairChars;
+    return true;
   };
 
-  // Add good examples one by one
-  if (good.length > 0) {
-    const sectionWithHeader = prompt + goodHeader;
-    if (sectionWithHeader.length + footer.length <= maxChars) {
-      prompt = sectionWithHeader;
-      for (let i = 0; i < good.length; i++) {
-        const entry = formatEntry(good[i], count, true);
-        if (prompt.length + entry.length + footer.length > maxChars) break;
-        prompt += entry;
-        count++;
-      }
-    }
+  for (const entry of bad) {
+    const userContent = [
+      '[FEEDBACK NEGATIV RECENT — APLICĂ LA RĂSPUNSUL URMĂTOR]',
+      `Întrebare similară: ${compactText(entry.question, 180)}`,
+      entry.comment
+        ? `Corecție utilizator: ${compactText(entry.comment, 260)}`
+        : 'Corecție utilizator: Evită tipul de răspuns marcat negativ și răspunde mai precis, strict pe cerință.',
+    ].join('\n');
+
+    const assistantContent = [
+      'Am înțeles feedback-ul negativ.',
+      'Voi evita tiparul de răspuns respins și voi respecta corecția utilizatorului pentru întrebări similare.',
+      `Răspuns anterior de evitat: ${compactText(entry.answer, 220)}`,
+    ].join('\n');
+
+    if (!tryAddPair(userContent, assistantContent)) break;
   }
 
-  // Add bad examples one by one
-  if (bad.length > 0) {
-    const sectionWithHeader = prompt + badHeader;
-    if (sectionWithHeader.length + footer.length <= maxChars) {
-      prompt = sectionWithHeader;
-      for (let i = 0; i < bad.length; i++) {
-        const entry = formatEntry(bad[i], count, false);
-        if (prompt.length + entry.length + footer.length > maxChars) break;
-        prompt += entry;
-        count++;
-      }
-    }
+  for (const entry of good) {
+    const userContent = [
+      '[EXEMPLU DE ÎNTREBARE SIMILARĂ DIN FEEDBACK POZITIV]',
+      compactText(entry.question, 220),
+    ].join('\n');
+
+    const assistantContent = [
+      '[EXEMPLU DE RĂSPUNS BUN DE URMAT]',
+      compactText(entry.answer, 420),
+      entry.comment ? `Observație utilizator: ${compactText(entry.comment, 160)}` : '',
+    ].filter(Boolean).join('\n');
+
+    if (!tryAddPair(userContent, assistantContent)) break;
   }
 
-  if (count === 0) return '';
-
-  prompt += footer;
-  return prompt;
+  return messages;
 }
