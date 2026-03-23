@@ -524,7 +524,7 @@ ${chunks}`;
                     }}
                   >{msg.content}</ReactMarkdown>
                   {/* Rating buttons */}
-                  {!isStreaming && !msg.content.startsWith('🔄') && (
+                  {feedbackEnabled && !isStreaming && !msg.content.startsWith('🔄') && (
                     <div className="flex items-center gap-1 mt-2 pt-1.5 border-t border-border/30">
                       <button
                         onClick={() => handleRate(i, 'good')}
