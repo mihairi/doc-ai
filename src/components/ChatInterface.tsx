@@ -343,7 +343,12 @@ ${chunks}`;
     if (feedbackEnabled) {
       try {
         feedbackSection = await buildFeedbackPrompt();
-      } catch { /* ignore */ }
+        console.log('[Feedback] enabled:', feedbackEnabled, '| section length:', feedbackSection.length, '| preview:', feedbackSection.slice(0, 200));
+      } catch (fbErr) {
+        console.error('[Feedback] error loading:', fbErr);
+      }
+    } else {
+      console.log('[Feedback] disabled, skipping injection');
     }
 
     const history: ChatMessage[] = [
