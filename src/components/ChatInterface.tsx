@@ -21,6 +21,7 @@ interface ChatInterfaceProps {
   config: LLMConfig;
   documents: DocEntry[];
   feedbackEnabled?: boolean;
+  feedbackMaxChars?: number;
 }
 
 
@@ -125,7 +126,7 @@ function buildLocalDocumentViewerHtml(doc: DocEntry, docName: string): string {
   return `<!DOCTYPE html><html lang="ro"><head><meta charset="utf-8"><title>${title}</title><style>:root{color-scheme:dark;}body{font-family:ui-sans-serif,system-ui,sans-serif;max-width:960px;margin:0 auto;padding:32px 24px;background:hsl(222 47% 11%);color:hsl(210 40% 98%);line-height:1.6;}h1{margin:0 0 16px;padding-bottom:12px;border-bottom:1px solid hsl(217 33% 24%);}pre{white-space:pre-wrap;word-break:break-word;background:hsl(222 47% 14%);padding:16px;border-radius:12px;border:1px solid hsl(217 33% 24%);}</style></head><body><h1>${title}</h1><pre>${content}</pre></body></html>`;
 }
 
-export function ChatInterface({ config, documents, feedbackEnabled = true }: ChatInterfaceProps) {
+export function ChatInterface({ config, documents, feedbackEnabled = true, feedbackMaxChars = 1500 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -343,7 +344,11 @@ ${chunks}`;
     if (feedbackEnabled) {
       try {
         feedbackSection = await buildFeedbackPrompt();
-        console.log('[Feedback] enabled:', feedbackEnabled, '| section length:', feedbackSection.length, '| preview:', feedbackSection.slice(0, 300));
+        if (feedbackSection.length > feedbackMaxChars) {
+          console.log('[Feedback] truncating from', feedbackSection.length, 'to', feedbackMaxChars, 'chars');
+          feedbackSection = feedbackSection.slice(0, feedbackMaxChars) + '\n--- (trunchiat) ---\n';
+        }
+        console.log('[Feedback] enabled:', feedbackEnabled, '| section length:', feedbackSection.length, '| max:', feedbackMaxChars);
       } catch (fbErr) {
         console.error('[Feedback] error loading:', fbErr);
       }
