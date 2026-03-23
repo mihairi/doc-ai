@@ -478,7 +478,7 @@ ${chunks}`;
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     components={{
-                      a: ({ href, children }) => {
+                      a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
                         if (href?.startsWith('/__docbot_local__/')) {
                           const handleLocalDocClick = async (e: React.MouseEvent) => {
                             e.preventDefault();
