@@ -333,8 +333,14 @@ ${chunks}`;
 
     const imageEntries = documents.length > 0 ? getImageEntries(documents) : [];
 
+    // Inject feedback examples into the system prompt
+    let feedbackSection = '';
+    try {
+      feedbackSection = await buildFeedbackPrompt();
+    } catch { /* ignore */ }
+
     const history: ChatMessage[] = [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: systemPrompt + feedbackSection },
       { role: 'user' as const, content: text },
     ];
 
