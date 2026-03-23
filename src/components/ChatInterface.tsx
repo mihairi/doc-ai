@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
-import { Send, Square, Bot, User, Server, Sparkles } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, Square, Bot, User, Server, Sparkles, ThumbsUp, ThumbsDown } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { DocEntry, buildContextPrompt, getImageEntries, loadDocumentById } from '@/lib/document-store';
 import { loadFileServerConfig, queryIndex } from '@/lib/file-server';
 import { useToast } from '@/hooks/use-toast';
+import { saveFeedback, buildFeedbackPrompt, FeedbackEntry } from '@/lib/feedback-store';
 
 interface DisplayMessage {
   role: 'user' | 'assistant';
@@ -132,8 +133,35 @@ export function ChatInterface({ config, documents }: ChatInterfaceProps) {
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [queryRewrite, setQueryRewrite] = useState(false);
+  const [ratings, setRatings] = useState<Record<number, 'good' | 'bad'>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
+
+  const handleRate = useCallback(async (msgIndex: number, rating: 'good' | 'bad') => {
+    // Find the user question preceding this assistant message
+    const assistantMsg = messages[msgIndex];
+    if (!assistantMsg || assistantMsg.role !== 'assistant') return;
+
+    let question = '';
+    for (let j = msgIndex - 1; j >= 0; j--) {
+      if (messages[j].role === 'user') {
+        question = messages[j].content;
+        break;
+      }
+    }
+
+    const entry: FeedbackEntry = {
+      id: `fb-${Date.now()}-${msgIndex}`,
+      question,
+      answer: assistantMsg.content,
+      rating,
+      createdAt: Date.now(),
+    };
+
+    await saveFeedback(entry);
+    setRatings(prev => ({ ...prev, [msgIndex]: rating }));
+    toast({ title: rating === 'good' ? '👍 Mulțumim!' : '👎 Vom îmbunătăți', description: 'Feedback-ul a fost salvat și va fi folosit pentru răspunsuri viitoare.' });
+  }, [messages, toast]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -305,8 +333,14 @@ ${chunks}`;
 
     const imageEntries = documents.length > 0 ? getImageEntries(documents) : [];
 
+    // Inject feedback examples into the system prompt
+    let feedbackSection = '';
+    try {
+      feedbackSection = await buildFeedbackPrompt();
+    } catch { /* ignore */ }
+
     const history: ChatMessage[] = [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: systemPrompt + feedbackSection },
       { role: 'user' as const, content: text },
     ];
 
@@ -444,7 +478,7 @@ ${chunks}`;
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     components={{
-                      a: ({ href, children }) => {
+                      a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
                         if (href?.startsWith('/__docbot_local__/')) {
                           const handleLocalDocClick = async (e: React.MouseEvent) => {
                             e.preventDefault();
@@ -488,6 +522,28 @@ ${chunks}`;
                       },
                     }}
                   >{msg.content}</ReactMarkdown>
+                  {/* Rating buttons */}
+                  {!isStreaming && !msg.content.startsWith('🔄') && (
+                    <div className="flex items-center gap-1 mt-2 pt-1.5 border-t border-border/30">
+                      <button
+                        onClick={() => handleRate(i, 'good')}
+                        className={`p-1 rounded transition-colors ${ratings[i] === 'good' ? 'text-green-400 bg-green-400/10' : 'text-muted-foreground/40 hover:text-green-400 hover:bg-green-400/10'}`}
+                        title="Răspuns bun"
+                      >
+                        <ThumbsUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleRate(i, 'bad')}
+                        className={`p-1 rounded transition-colors ${ratings[i] === 'bad' ? 'text-red-400 bg-red-400/10' : 'text-muted-foreground/40 hover:text-red-400 hover:bg-red-400/10'}`}
+                        title="Răspuns slab"
+                      >
+                        <ThumbsDown className="h-3.5 w-3.5" />
+                      </button>
+                      {ratings[i] && (
+                        <span className="text-[10px] text-muted-foreground ml-1">Feedback salvat</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <p className="whitespace-pre-wrap">{msg.content}</p>
