@@ -5,11 +5,13 @@ const CONFIG_KEY = 'docbot-app-config';
 export interface AppConfig {
   appName: string;
   backgroundHsl: string; // stored as HSL values e.g. "220 20% 7%"
+  feedbackEnabled: boolean;
 }
 
 const DEFAULT_CONFIG: AppConfig = {
   appName: 'DocBot',
   backgroundHsl: '220 20% 7%',
+  feedbackEnabled: true,
 };
 
 export function loadAppConfig(): AppConfig {

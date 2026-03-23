@@ -49,6 +49,26 @@ export async function loadAllFeedback(): Promise<FeedbackEntry[]> {
   });
 }
 
+export async function deleteFeedback(id: string): Promise<void> {
+  const db = await openFeedbackDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function clearAllFeedback(): Promise<void> {
+  const db = await openFeedbackDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 /**
  * Build a prompt section from stored feedback to guide the model.
  * Includes the most recent good and bad examples (max ~10 total).

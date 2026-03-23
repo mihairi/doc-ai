@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Settings, RefreshCw, Check, Wifi, WifiOff, Server, FolderOpen, Database, Zap, FileText, Cpu, Palette, Type, KeyRound } from 'lucide-react';
+import { FeedbackPanel } from '@/components/FeedbackPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -504,6 +505,9 @@ export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigCh
               </div>
             </div>
           </div>
+
+          {/* Feedback Management */}
+          <FeedbackPanel appConfig={appConfig} onAppConfigChange={onAppConfigChange} />
 
           <Button variant="secondary" size="sm" className="w-full" onClick={() => setOpen(false)}>
             <Check className="h-3.5 w-3.5 mr-1.5" /> Gata
