@@ -147,6 +147,11 @@ export function FeedbackPanel({ appConfig, onAppConfigChange }: FeedbackPanelPro
                   <div className="text-muted-foreground">
                     <span className="font-medium text-foreground">R:</span> {entry.answer.slice(0, 200)}{entry.answer.length > 200 ? '…' : ''}
                   </div>
+                  {entry.comment && (
+                    <div className="text-muted-foreground italic">
+                      <span className="font-medium text-foreground not-italic">💬</span> {entry.comment}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

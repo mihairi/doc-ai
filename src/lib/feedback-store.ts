@@ -98,7 +98,7 @@ export async function buildFeedbackPrompt(): Promise<string> {
   if (bad.length > 0) {
     prompt += '\nExemple de răspunsuri RELE (evită aceste tipuri de răspunsuri):\n';
     bad.forEach((f, i) => {
-      prompt += `\n❌ Exemplu ${i + 1}:\nÎntrebare: ${f.question.slice(0, 200)}\nRăspuns de evitat: ${f.answer.slice(0, 500)}\n`;
+      prompt += `\n❌ Exemplu ${i + 1}:\nÎntrebare: ${f.question.slice(0, 200)}\nRăspuns de evitat: ${f.answer.slice(0, 500)}${f.comment ? `\nComentariu utilizator: ${f.comment.slice(0, 200)}` : ''}\n`;
     });
   }
 
