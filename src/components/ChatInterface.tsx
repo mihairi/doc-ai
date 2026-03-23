@@ -336,9 +336,11 @@ ${chunks}`;
 
     // Inject feedback examples into the system prompt
     let feedbackSection = '';
-    try {
-      feedbackSection = await buildFeedbackPrompt();
-    } catch { /* ignore */ }
+    if (feedbackEnabled) {
+      try {
+        feedbackSection = await buildFeedbackPrompt();
+      } catch { /* ignore */ }
+    }
 
     const history: ChatMessage[] = [
       { role: 'system', content: systemPrompt + feedbackSection },
