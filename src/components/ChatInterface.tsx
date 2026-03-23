@@ -20,6 +20,7 @@ interface DisplayMessage {
 interface ChatInterfaceProps {
   config: LLMConfig;
   documents: DocEntry[];
+  feedbackEnabled?: boolean;
 }
 
 
