@@ -1,7 +1,9 @@
 /**
  * Feedback store – persists user ratings (thumbs up/down) on assistant answers
- * in IndexedDB so they can be injected into the system prompt as few-shot examples.
+ * on the companion Python server (.docbot-feedback.json).
  */
+
+import { loadFileServerConfig } from './file-server';
 
 export interface FeedbackEntry {
   id: string;
@@ -17,62 +19,54 @@ export interface FeedbackPromptMessage {
   content: string;
 }
 
-const DB_NAME = 'docbot-feedback';
-const DB_VERSION = 1;
-const STORE_NAME = 'feedback';
-
-function openFeedbackDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+function getServerUrl(): string {
+  const cfg = loadFileServerConfig();
+  return cfg.url.replace(/\/+$/, '');
 }
 
 export async function saveFeedback(entry: FeedbackEntry): Promise<void> {
-  const db = await openFeedbackDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).put(entry);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  const url = getServerUrl();
+  const res = await fetch(`${url}/api/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(entry),
+    signal: AbortSignal.timeout(5000),
   });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Server error: ${res.status}`);
+  }
 }
 
 export async function loadAllFeedback(): Promise<FeedbackEntry[]> {
-  const db = await openFeedbackDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const req = tx.objectStore(STORE_NAME).getAll();
-    req.onsuccess = () => resolve(req.result as FeedbackEntry[]);
-    req.onerror = () => reject(req.error);
+  const url = getServerUrl();
+  const res = await fetch(`${url}/api/feedback`, {
+    signal: AbortSignal.timeout(5000),
   });
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
+  const data = await res.json();
+  return (data.entries || []) as FeedbackEntry[];
 }
 
 export async function deleteFeedback(id: string): Promise<void> {
-  const db = await openFeedbackDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).delete(id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  const url = getServerUrl();
+  const res = await fetch(`${url}/api/feedback/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    signal: AbortSignal.timeout(5000),
   });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Server error: ${res.status}`);
+  }
 }
 
 export async function clearAllFeedback(): Promise<void> {
-  const db = await openFeedbackDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).clear();
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+  const url = getServerUrl();
+  const res = await fetch(`${url}/api/feedback/clear`, {
+    method: 'DELETE',
+    signal: AbortSignal.timeout(5000),
   });
+  if (!res.ok) throw new Error(`Server error: ${res.status}`);
 }
 
 function compactText(value: string, maxChars: number): string {
@@ -87,7 +81,13 @@ function compactText(value: string, maxChars: number): string {
  * added as user/assistant example pairs. Entries are added one by one until the limit is hit.
  */
 export async function buildFeedbackMessages(maxChars: number = 1500): Promise<FeedbackPromptMessage[]> {
-  const all = await loadAllFeedback();
+  let all: FeedbackEntry[];
+  try {
+    all = await loadAllFeedback();
+  } catch (err) {
+    console.warn('[Feedback] Nu se poate încărca feedback-ul de pe server:', err);
+    return [];
+  }
   if (all.length === 0 || maxChars < 120) return [];
 
   all.sort((a, b) => b.createdAt - a.createdAt);
