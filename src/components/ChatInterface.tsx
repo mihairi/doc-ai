@@ -343,11 +343,7 @@ ${chunks}`;
     let feedbackSection = '';
     if (feedbackEnabled) {
       try {
-        feedbackSection = await buildFeedbackPrompt();
-        if (feedbackSection.length > feedbackMaxChars) {
-          console.log('[Feedback] truncating from', feedbackSection.length, 'to', feedbackMaxChars, 'chars');
-          feedbackSection = feedbackSection.slice(0, feedbackMaxChars) + '\n--- (trunchiat) ---\n';
-        }
+        feedbackSection = await buildFeedbackPrompt(feedbackMaxChars);
         console.log('[Feedback] enabled:', feedbackEnabled, '| section length:', feedbackSection.length, '| max:', feedbackMaxChars);
       } catch (fbErr) {
         console.error('[Feedback] error loading:', fbErr);

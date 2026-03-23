@@ -74,7 +74,7 @@ export async function clearAllFeedback(): Promise<void> {
  * Build a prompt section from stored feedback to guide the model.
  * Includes the most recent good and bad examples (max ~10 total).
  */
-export async function buildFeedbackPrompt(): Promise<string> {
+export async function buildFeedbackPrompt(maxChars: number = 1500): Promise<string> {
   const all = await loadAllFeedback();
   if (all.length === 0) return '';
 
@@ -86,22 +86,50 @@ export async function buildFeedbackPrompt(): Promise<string> {
 
   if (good.length === 0 && bad.length === 0) return '';
 
-  let prompt = '\n\n--- FEEDBACK DIN CONVERSAȚII ANTERIOARE (folosește pentru a îmbunătăți calitatea răspunsurilor) ---\n';
+  const header = '\n\n--- FEEDBACK DIN CONVERSAȚII ANTERIOARE (folosește pentru a îmbunătăți calitatea răspunsurilor) ---\n';
+  const footer = '\n--- SFÂRȘIT FEEDBACK ---\n';
+  const goodHeader = '\nExemple de răspunsuri BUNE (imită stilul și nivelul de detaliu):\n';
+  const badHeader = '\nExemple de răspunsuri RELE (evită aceste tipuri de răspunsuri):\n';
 
+  let prompt = header;
+  let count = 0;
+
+  const formatEntry = (f: FeedbackEntry, i: number, isGood: boolean): string => {
+    const icon = isGood ? '✅' : '❌';
+    const label = isGood ? 'Răspuns bun' : 'Răspuns de evitat';
+    return `\n${icon} Exemplu ${i + 1}:\nÎntrebare: ${f.question.slice(0, 200)}\n${label}: ${f.answer.slice(0, 500)}${f.comment ? `\nComentariu utilizator: ${f.comment.slice(0, 200)}` : ''}\n`;
+  };
+
+  // Add good examples one by one
   if (good.length > 0) {
-    prompt += '\nExemple de răspunsuri BUNE (imită stilul și nivelul de detaliu):\n';
-    good.forEach((f, i) => {
-      prompt += `\n✅ Exemplu ${i + 1}:\nÎntrebare: ${f.question.slice(0, 200)}\nRăspuns bun: ${f.answer.slice(0, 500)}${f.comment ? `\nComentariu utilizator: ${f.comment.slice(0, 200)}` : ''}\n`;
-    });
+    const sectionWithHeader = prompt + goodHeader;
+    if (sectionWithHeader.length + footer.length <= maxChars) {
+      prompt = sectionWithHeader;
+      for (let i = 0; i < good.length; i++) {
+        const entry = formatEntry(good[i], count, true);
+        if (prompt.length + entry.length + footer.length > maxChars) break;
+        prompt += entry;
+        count++;
+      }
+    }
   }
 
+  // Add bad examples one by one
   if (bad.length > 0) {
-    prompt += '\nExemple de răspunsuri RELE (evită aceste tipuri de răspunsuri):\n';
-    bad.forEach((f, i) => {
-      prompt += `\n❌ Exemplu ${i + 1}:\nÎntrebare: ${f.question.slice(0, 200)}\nRăspuns de evitat: ${f.answer.slice(0, 500)}${f.comment ? `\nComentariu utilizator: ${f.comment.slice(0, 200)}` : ''}\n`;
-    });
+    const sectionWithHeader = prompt + badHeader;
+    if (sectionWithHeader.length + footer.length <= maxChars) {
+      prompt = sectionWithHeader;
+      for (let i = 0; i < bad.length; i++) {
+        const entry = formatEntry(bad[i], count, false);
+        if (prompt.length + entry.length + footer.length > maxChars) break;
+        prompt += entry;
+        count++;
+      }
+    }
   }
 
-  prompt += '\n--- SFÂRȘIT FEEDBACK ---\n';
+  if (count === 0) return '';
+
+  prompt += footer;
   return prompt;
 }
