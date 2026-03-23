@@ -531,23 +531,70 @@ ${chunks}`;
                   >{msg.content}</ReactMarkdown>
                   {/* Rating buttons */}
                   {feedbackEnabled && !isStreaming && !msg.content.startsWith('🔄') && (
-                    <div className="flex items-center gap-1 mt-2 pt-1.5 border-t border-border/30">
-                      <button
-                        onClick={() => handleRate(i, 'good')}
-                        className={`p-1 rounded transition-colors ${ratings[i] === 'good' ? 'text-green-400 bg-green-400/10' : 'text-muted-foreground/40 hover:text-green-400 hover:bg-green-400/10'}`}
-                        title="Răspuns bun"
-                      >
-                        <ThumbsUp className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleRate(i, 'bad')}
-                        className={`p-1 rounded transition-colors ${ratings[i] === 'bad' ? 'text-red-400 bg-red-400/10' : 'text-muted-foreground/40 hover:text-red-400 hover:bg-red-400/10'}`}
-                        title="Răspuns slab"
-                      >
-                        <ThumbsDown className="h-3.5 w-3.5" />
-                      </button>
-                      {ratings[i] && (
-                        <span className="text-[10px] text-muted-foreground ml-1">Feedback salvat</span>
+                    <div className="mt-2 pt-1.5 border-t border-border/30 space-y-1.5">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            if (ratings[i]) return;
+                            setCommentOpen(commentOpen === i ? null : i);
+                            setCommentText('');
+                            if (!ratings[i] && commentOpen !== i) {
+                              // just open comment area, don't submit yet
+                            } else {
+                              handleRate(i, 'good');
+                            }
+                          }}
+                          className={`p-1 rounded transition-colors ${ratings[i] === 'good' ? 'text-green-400 bg-green-400/10' : 'text-muted-foreground/40 hover:text-green-400 hover:bg-green-400/10'}`}
+                          title="Răspuns bun"
+                        >
+                          <ThumbsUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (ratings[i]) return;
+                            setCommentOpen(commentOpen === i ? null : i);
+                            setCommentText('');
+                          }}
+                          className={`p-1 rounded transition-colors ${ratings[i] === 'bad' ? 'text-red-400 bg-red-400/10' : 'text-muted-foreground/40 hover:text-red-400 hover:bg-red-400/10'}`}
+                          title="Răspuns slab"
+                        >
+                          <ThumbsDown className="h-3.5 w-3.5" />
+                        </button>
+                        {ratings[i] && (
+                          <span className="text-[10px] text-muted-foreground ml-1">Feedback salvat</span>
+                        )}
+                      </div>
+                      {!ratings[i] && commentOpen === i && (
+                        <div className="flex gap-1.5 items-end">
+                          <div className="flex-1 flex gap-1">
+                            <button
+                              onClick={() => handleRate(i, 'good', commentText)}
+                              className="p-1 rounded text-muted-foreground/60 hover:text-green-400 hover:bg-green-400/10 transition-colors shrink-0"
+                              title="Bun"
+                            >
+                              <ThumbsUp className="h-3 w-3" />
+                            </button>
+                            <button
+                              onClick={() => handleRate(i, 'bad', commentText)}
+                              className="p-1 rounded text-muted-foreground/60 hover:text-red-400 hover:bg-red-400/10 transition-colors shrink-0"
+                              title="Slab"
+                            >
+                              <ThumbsDown className="h-3 w-3" />
+                            </button>
+                            <input
+                              type="text"
+                              value={commentText}
+                              onChange={(e) => setCommentText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Escape') { setCommentOpen(null); setCommentText(''); }
+                              }}
+                              placeholder="Comentariu opțional..."
+                              className="flex-1 h-6 text-[11px] bg-muted border border-border rounded px-2 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
+                              maxLength={500}
+                              autoFocus
+                            />
+                          </div>
+                        </div>
                       )}
                     </div>
                   )}

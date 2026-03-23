@@ -8,6 +8,7 @@ export interface FeedbackEntry {
   question: string;
   answer: string;
   rating: 'good' | 'bad';
+  comment?: string;
   createdAt: number;
 }
 
