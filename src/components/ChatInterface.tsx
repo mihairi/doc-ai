@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { DocEntry, buildContextPrompt, getImageEntries, loadDocumentById } from '@/lib/document-store';
 import { loadFileServerConfig, queryIndex } from '@/lib/file-server';
 import { useToast } from '@/hooks/use-toast';
-import { saveFeedback, buildFeedbackPrompt, FeedbackEntry } from '@/lib/feedback-store';
+import { saveFeedback, buildFeedbackMessages, FeedbackEntry } from '@/lib/feedback-store';
 
 interface DisplayMessage {
   role: 'user' | 'assistant';
@@ -339,12 +339,13 @@ ${chunks}`;
 
     const imageEntries = documents.length > 0 ? getImageEntries(documents) : [];
 
-    // Inject feedback examples into the system prompt BEFORE documents
-    let feedbackSection = '';
+    // Inject feedback as few-shot messages immediately before the current question
+    let feedbackMessages: ChatMessage[] = [];
     if (feedbackEnabled) {
       try {
-        feedbackSection = await buildFeedbackPrompt(feedbackMaxChars);
-        console.log('[Feedback] enabled:', feedbackEnabled, '| section length:', feedbackSection.length, '| max:', feedbackMaxChars);
+        feedbackMessages = await buildFeedbackMessages(feedbackMaxChars);
+        const feedbackChars = feedbackMessages.reduce((sum, msg) => sum + (typeof msg.content === 'string' ? msg.content.length : 0), 0);
+        console.log('[Feedback] enabled:', feedbackEnabled, '| messages:', feedbackMessages.length, '| chars:', feedbackChars, '| max:', feedbackMaxChars);
       } catch (fbErr) {
         console.error('[Feedback] error loading:', fbErr);
       }
@@ -352,15 +353,13 @@ ${chunks}`;
       console.log('[Feedback] disabled, skipping injection');
     }
 
-    // Place feedback BEFORE document context so it doesn't get truncated by small context windows
-    const fullSystemPrompt = feedbackSection
-      ? feedbackSection + '\n\n' + systemPrompt
-      : systemPrompt;
-
-    console.log('[System Prompt] total length:', fullSystemPrompt.length, 'chars | feedback:', feedbackSection.length, 'chars | context:', systemPrompt.length, 'chars');
+    const fullSystemPrompt = systemPrompt;
+    const feedbackChars = feedbackMessages.reduce((sum, msg) => sum + (typeof msg.content === 'string' ? msg.content.length : 0), 0);
+    console.log('[System Prompt] total length:', fullSystemPrompt.length, 'chars | feedback messages:', feedbackMessages.length, '| feedback chars:', feedbackChars, '| context:', systemPrompt.length, 'chars');
 
     const history: ChatMessage[] = [
       { role: 'system', content: fullSystemPrompt },
+      ...feedbackMessages,
       { role: 'user' as const, content: text },
     ];
 
