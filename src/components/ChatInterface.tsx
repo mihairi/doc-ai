@@ -522,6 +522,28 @@ ${chunks}`;
                       },
                     }}
                   >{msg.content}</ReactMarkdown>
+                  {/* Rating buttons */}
+                  {!isStreaming && !msg.content.startsWith('🔄') && (
+                    <div className="flex items-center gap-1 mt-2 pt-1.5 border-t border-border/30">
+                      <button
+                        onClick={() => handleRate(i, 'good')}
+                        className={`p-1 rounded transition-colors ${ratings[i] === 'good' ? 'text-green-400 bg-green-400/10' : 'text-muted-foreground/40 hover:text-green-400 hover:bg-green-400/10'}`}
+                        title="Răspuns bun"
+                      >
+                        <ThumbsUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleRate(i, 'bad')}
+                        className={`p-1 rounded transition-colors ${ratings[i] === 'bad' ? 'text-red-400 bg-red-400/10' : 'text-muted-foreground/40 hover:text-red-400 hover:bg-red-400/10'}`}
+                        title="Răspuns slab"
+                      >
+                        <ThumbsDown className="h-3.5 w-3.5" />
+                      </button>
+                      {ratings[i] && (
+                        <span className="text-[10px] text-muted-foreground ml-1">Feedback salvat</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <p className="whitespace-pre-wrap">{msg.content}</p>
