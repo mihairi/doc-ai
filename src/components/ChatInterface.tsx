@@ -338,12 +338,12 @@ ${chunks}`;
 
     const imageEntries = documents.length > 0 ? getImageEntries(documents) : [];
 
-    // Inject feedback examples into the system prompt
+    // Inject feedback examples into the system prompt BEFORE documents
     let feedbackSection = '';
     if (feedbackEnabled) {
       try {
         feedbackSection = await buildFeedbackPrompt();
-        console.log('[Feedback] enabled:', feedbackEnabled, '| section length:', feedbackSection.length, '| preview:', feedbackSection.slice(0, 200));
+        console.log('[Feedback] enabled:', feedbackEnabled, '| section length:', feedbackSection.length, '| preview:', feedbackSection.slice(0, 300));
       } catch (fbErr) {
         console.error('[Feedback] error loading:', fbErr);
       }
@@ -351,8 +351,15 @@ ${chunks}`;
       console.log('[Feedback] disabled, skipping injection');
     }
 
+    // Place feedback BEFORE document context so it doesn't get truncated by small context windows
+    const fullSystemPrompt = feedbackSection
+      ? feedbackSection + '\n\n' + systemPrompt
+      : systemPrompt;
+
+    console.log('[System Prompt] total length:', fullSystemPrompt.length, 'chars | feedback:', feedbackSection.length, 'chars | context:', systemPrompt.length, 'chars');
+
     const history: ChatMessage[] = [
-      { role: 'system', content: systemPrompt + feedbackSection },
+      { role: 'system', content: fullSystemPrompt },
       { role: 'user' as const, content: text },
     ];
 
