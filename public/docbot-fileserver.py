@@ -80,8 +80,8 @@ class LMStudioEmbedding(BaseEmbedding):
         return self._get_text_embedding(text)
 
 custom_embed_model = LMStudioEmbedding(
-    model_name="text-embedding-embedding-gemma-300m",
-    base_url="http://localhost:1234/v1",
+    model_name="text-embedding-bge-m3",
+    base_url="http://10.200.20.1:1234/v1",
 )
   
 try:
@@ -219,7 +219,7 @@ def _convert_html_to_pdf(html_path: str) -> str | None:
         parent_dir = str(Path(html_path).resolve().parent)
         options = {
             "encoding": "UTF-8",
-            "no-images": "",
+            #"no-images": "",
             "quiet": "",
             "disable-javascript": "",
             "no-outline": "",
@@ -228,31 +228,24 @@ def _convert_html_to_pdf(html_path: str) -> str | None:
             "load-error-handling": "ignore",
             "load-media-error-handling": "ignore",
         }
-        try:
-            pdfkit.from_file(prepared_html_path, pdf_path, options=options)
-        except Exception as first_error:
-            cmd = [
-                "wkhtmltopdf",
-                "--encoding", "UTF-8",
-                "--no-images",
-                "--quiet",
-                "--disable-javascript",
-                "--no-outline",
-                "--enable-local-file-access",
-                "--allow", parent_dir,
-                "--load-error-handling", "ignore",
-                "--load-media-error-handling", "ignore",
-                prepared_html_path,
-                pdf_path,
-            ]
-            try:
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-            except subprocess.TimeoutExpired:
-                print(f"    ⚠ HTML→PDF timeout (120s): {Path(html_path).name} — skipping")
-                return None
-            if result.returncode != 0:
-                stderr = (result.stderr or result.stdout or "").strip()
-                raise RuntimeError(stderr or str(first_error)) from first_error
+        cmd = [
+            "wkhtmltopdf",
+            "--encoding", "UTF-8",
+            #"--no-images",
+            "--quiet",
+            "--disable-javascript",
+            "--no-outline",
+            "--enable-local-file-access",
+            "--allow", parent_dir,
+            "--load-error-handling", "ignore",
+            "--load-media-error-handling", "ignore",
+            prepared_html_path,
+            pdf_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if result.returncode != 0:
+            stderr = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(stderr or str(first_error)) from first_error
         if Path(pdf_path).exists() and Path(pdf_path).stat().st_size > 0:
             print(f"    ✓ HTML→PDF: {Path(html_path).name} → {Path(pdf_path).name}")
             # Remove original HTML
@@ -616,7 +609,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="DocBot File Server (LlamaIndex)")
     parser.add_argument("--port", type=int, default=5123, help="Port (default: 5123)")
-    parser.add_argument("--host", type=str, default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
+    parser.add_argument("--host", type=str, default="10.200.20.1", help="Bind address (default: 10.200.20.1)")
     parser.add_argument("--folders", type=str, required=True,
                         help="Comma-separated folder paths")
     args = parser.parse_args()
