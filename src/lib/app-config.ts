@@ -6,12 +6,14 @@ export interface AppConfig {
   appName: string;
   backgroundHsl: string; // stored as HSL values e.g. "220 20% 7%"
   feedbackEnabled: boolean;
+  feedbackMaxChars: number; // max chars for feedback section injected into prompt
 }
 
 const DEFAULT_CONFIG: AppConfig = {
   appName: 'DocBot',
   backgroundHsl: '220 20% 7%',
   feedbackEnabled: true,
+  feedbackMaxChars: 1500,
 };
 
 export function loadAppConfig(): AppConfig {

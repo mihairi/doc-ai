@@ -86,6 +86,31 @@ export function FeedbackPanel({ appConfig, onAppConfigChange }: FeedbackPanelPro
           : 'Colectarea de feedback este dezactivată.'}
       </p>
 
+      {appConfig.feedbackEnabled && (
+        <div>
+          <Label className="text-xs text-muted-foreground">
+            Limită feedback în prompt: {appConfig.feedbackMaxChars || 1500} caractere
+          </Label>
+          <input
+            type="range"
+            min={200}
+            max={4000}
+            step={100}
+            value={appConfig.feedbackMaxChars || 1500}
+            onChange={(e) => {
+              const updated = { ...appConfig, feedbackMaxChars: Number(e.target.value) };
+              saveAppConfig(updated);
+              onAppConfigChange(updated);
+            }}
+            className="w-full mt-1 accent-primary"
+          />
+          <div className="flex justify-between text-[10px] text-muted-foreground">
+            <span>200</span>
+            <span>4000</span>
+          </div>
+        </div>
+      )}
+
       <Button
         variant="secondary"
         size="sm"

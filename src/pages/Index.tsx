@@ -140,7 +140,7 @@ const Index = () => {
             )}
           </div>
         )}
-        <ChatInterface config={config} documents={documents} feedbackEnabled={appConfig.feedbackEnabled} />
+        <ChatInterface config={config} documents={documents} feedbackEnabled={appConfig.feedbackEnabled} feedbackMaxChars={appConfig.feedbackMaxChars} />
       </main>
     </div>
   );

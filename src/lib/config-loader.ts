@@ -19,7 +19,7 @@ let _loadPromise: Promise<ExternalConfig> | null = null;
 const FALLBACK: ExternalConfig = {
   fileServer: { enabled: false, url: 'http://127.0.0.1:5123' },
   llm: { provider: 'ollama', host: '127.0.0.1', port: '11434', model: '' },
-  app: { appName: 'DocBot', backgroundHsl: '220 20% 7%', feedbackEnabled: true },
+  app: { appName: 'DocBot', backgroundHsl: '220 20% 7%', feedbackEnabled: true, feedbackMaxChars: 1500 },
 };
 
 export async function loadExternalConfig(): Promise<ExternalConfig> {
