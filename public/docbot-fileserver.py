@@ -165,37 +165,159 @@ def _text_quality_ok(text: str) -> bool:
     ratio = alnum / len(stripped) if stripped else 0
     return ratio >= MIN_ALPHA_RATIO
 
+def _normalize_text_for_compare(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "")).strip().lower()
+
+def _text_quality_score(text: str) -> float:
+    stripped = (text or "").strip()
+    if not stripped:
+        return 0.0
+    alnum = sum(1 for c in stripped if c.isalnum() or c.isspace())
+    alpha_ratio = (alnum / len(stripped)) if stripped else 0.0
+    url_bonus = 75.0 if re.search(r"https?://|www\.|mailto:|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", stripped, re.IGNORECASE) else 0.0
+    return len(stripped) * max(alpha_ratio, 0.1) + url_bonus
+
+def _merge_distinct_texts(primary: str, secondary: str) -> str:
+    primary = (primary or "").strip()
+    secondary = (secondary or "").strip()
+    if not primary:
+        return secondary
+    if not secondary:
+        return primary
+
+    merged_lines = []
+    seen = set()
+
+    def add_lines(text: str):
+        for line in text.splitlines():
+            cleaned = re.sub(r"\s+", " ", line).strip()
+            if not cleaned:
+                continue
+            normalized = cleaned.lower()
+            if normalized in seen:
+                continue
+            if any(
+                len(existing) > 24 and len(normalized) > 24 and (normalized in existing or existing in normalized)
+                for existing in seen
+            ):
+                continue
+            seen.add(normalized)
+            merged_lines.append(cleaned)
+
+    add_lines(primary)
+    add_lines(secondary)
+    return "\n".join(merged_lines).strip()
+
+def _extract_page_links(page) -> str:
+    """Extract explicit PDF links/URIs from annotations so they are searchable too."""
+    links = []
+    try:
+        for link in page.get_links() or []:
+            uri = (link.get("uri") or link.get("file") or "").strip()
+            if uri:
+                links.append(uri)
+    except Exception:
+        return ""
+
+    deduped = []
+    seen = set()
+    for link in links:
+        normalized = link.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(f"Link: {link}")
+    return "\n".join(deduped)
+
+def _extract_native_page_text(page) -> str:
+    """Extract page text using multiple PyMuPDF strategies and merge distinct lines."""
+    variants = []
+
+    try:
+        variants.append((page.get_text("text") or "").strip())
+    except Exception:
+        pass
+
+    try:
+        variants.append((page.get_text("text", sort=True) or "").strip())
+    except Exception:
+        pass
+
+    try:
+        blocks = page.get_text("blocks") or []
+        block_text = "\n".join(
+            str(block[4]).strip()
+            for block in blocks
+            if len(block) > 4 and str(block[4]).strip()
+        )
+        variants.append(block_text.strip())
+    except Exception:
+        pass
+
+    best = ""
+    for variant in variants:
+        if not variant:
+            continue
+        if not best:
+            best = variant
+            continue
+        candidate = _merge_distinct_texts(best, variant)
+        if _text_quality_score(candidate) >= _text_quality_score(best):
+            best = candidate
+    return best.strip()
+
 def _read_pdf_with_pymupdf(file_path: str) -> list:
     """Extract text from PDF using PyMuPDF (fitz). Falls back to OCR for scanned pages."""
     if not HAS_PYMUPDF or not HAS_LLAMA:
         return []
     documents = []
     ocr_pages = 0
+    indexed_pages = 0
     try:
         doc = fitz.open(file_path)
         for page_num in range(len(doc)):
             page = doc[page_num]
-            raw_text = page.get_text("text")
-            text = raw_text
-            original_ok = _text_quality_ok(raw_text or "")
+            native_text = _extract_native_page_text(page)
+            link_text = _extract_page_links(page)
+            text = native_text
+            original_ok = _text_quality_ok(native_text or "")
+            has_raster_content = False
+            try:
+                has_raster_content = bool(page.get_images(full=True))
+            except Exception:
+                has_raster_content = False
 
             # If page text is missing, too short, or looks like garbage → try OCR
-            if not original_ok and HAS_OCR:
+            should_try_ocr = HAS_OCR and (not original_ok or (has_raster_content and len((native_text or "").strip()) < 250))
+            if should_try_ocr:
                 ocr_text = _ocr_pdf_page(file_path, page_num)
                 ocr_ok = _text_quality_ok(ocr_text or "")
-                if ocr_ok:
+                ocr_used = False
+                if ocr_text:
+                    if not text:
+                        text = ocr_text
+                        ocr_used = True
+                    else:
+                        merged = _merge_distinct_texts(text, ocr_text)
+                        merged_differs = _normalize_text_for_compare(merged) != _normalize_text_for_compare(text)
+                        if merged_differs and (
+                            not original_ok or ocr_ok or has_raster_content or _text_quality_score(ocr_text) >= (_text_quality_score(text) * 0.65)
+                        ):
+                            text = merged
+                            ocr_used = True
+                if ocr_used:
+                    ocr_pages += 1
+                    print(f"      🔍 Page {page_num + 1}: OCR merged into indexed text")
+                elif ocr_text and len(ocr_text.strip()) > len((native_text or "").strip()):
                     text = ocr_text
                     ocr_pages += 1
-                    print(f"      🔍 Page {page_num + 1}: OCR used (original text quality poor)")
-                elif ocr_text and len(ocr_text.strip()) > len((raw_text or "").strip()):
-                    # OCR text is longer even if not great quality — use it anyway
-                    text = ocr_text
-                    ocr_pages += 1
-                    print(f"      🔍 Page {page_num + 1}: OCR used (longer than original, quality marginal)")
+                    print(f"      🔍 Page {page_num + 1}: OCR used (longer than native extraction)")
                 else:
                     print(f"      ⚠️ Page {page_num + 1}: OCR attempted but no improvement")
             elif not original_ok and not HAS_OCR:
                 print(f"      ⚠️ Page {page_num + 1}: poor text quality but OCR not available")
+
+            text = _merge_distinct_texts(text, link_text)
 
             # Always include the page, even with minimal text, to avoid losing content
             final_text = (text or "").strip()
@@ -204,12 +326,15 @@ def _read_pdf_with_pymupdf(file_path: str) -> list:
                     "file_path": str(Path(file_path).resolve()),
                     "file_name": Path(file_path).name,
                     "page_label": str(page_num + 1),
+                    "page": str(page_num + 1),
                     "file_type": "application/pdf",
                 }
                 documents.append(Document(text=final_text, metadata=metadata))
+                indexed_pages += 1
             else:
                 print(f"      ❌ Page {page_num + 1}: no text extracted (empty after all attempts)")
         doc.close()
+        print(f"    ✓ Indexed {indexed_pages}/{len(doc)} page(s) in {Path(file_path).name}")
         if ocr_pages > 0:
             print(f"    🔍 OCR applied on {ocr_pages} scanned page(s) in {Path(file_path).name}")
     except Exception as e:
@@ -547,19 +672,32 @@ def query():
 
     data = request.get_json() or {}
     question = data.get("question", "")
-    top_k = data.get("top_k", 6)
+    try:
+        top_k = max(1, int(data.get("top_k", 6)))
+    except Exception:
+        top_k = 6
 
     if not question:
         return jsonify({"error": "Missing 'question' field"}), 400
 
     try:
         with _index_lock:
-            retriever = _index.as_retriever(similarity_top_k=top_k)
+            candidate_k = min(max(top_k * 4, top_k), 50)
+            retriever = _index.as_retriever(similarity_top_k=candidate_k)
             nodes = retriever.retrieve(question)
 
         results = []
+        seen_sources = set()
         for node in nodes:
             meta = dict(node.metadata) if node.metadata else {}
+            source_key = (
+                meta.get("file_path", ""),
+                str(meta.get("page_label") or meta.get("page") or "").strip(),
+                str(meta.get("section") or meta.get("header") or meta.get("header_id") or "").strip(),
+            )
+            if source_key in seen_sources:
+                continue
+            seen_sources.add(source_key)
             # Add a file_url for the frontend to create clickable links
             file_path = meta.get("file_path", "")
             if file_path:
@@ -584,6 +722,8 @@ def query():
                 "score": float(node.get_score()) if node.get_score() is not None else 0,
                 "metadata": meta,
             })
+            if len(results) >= top_k:
+                break
         return jsonify({"results": results})
 
     except Exception as e:
