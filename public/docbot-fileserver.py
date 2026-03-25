@@ -273,72 +273,100 @@ def _read_pdf_with_pymupdf(file_path: str) -> list:
     documents = []
     ocr_pages = 0
     indexed_pages = 0
+    doc = None
+    page_count = 0
     try:
         doc = fitz.open(file_path)
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            native_text = _extract_native_page_text(page)
-            link_text = _extract_page_links(page)
-            text = native_text
-            original_ok = _text_quality_ok(native_text or "")
-            has_raster_content = False
+        page_count = doc.page_count
+        for page_num in range(page_count):
             try:
-                has_raster_content = bool(page.get_images(full=True))
-            except Exception:
+                page = doc.load_page(page_num)
+                native_text = _extract_native_page_text(page)
+                link_text = _extract_page_links(page)
+                text = native_text
+                original_ok = _text_quality_ok(native_text or "")
                 has_raster_content = False
+                try:
+                    has_raster_content = bool(page.get_images(full=True))
+                except Exception:
+                    has_raster_content = False
 
-            # If page text is missing, too short, or looks like garbage → try OCR
-            should_try_ocr = HAS_OCR and (not original_ok or (has_raster_content and len((native_text or "").strip()) < 250))
-            if should_try_ocr:
-                ocr_text = _ocr_pdf_page(file_path, page_num)
-                ocr_ok = _text_quality_ok(ocr_text or "")
-                ocr_used = False
-                if ocr_text:
-                    if not text:
-                        text = ocr_text
-                        ocr_used = True
-                    else:
-                        merged = _merge_distinct_texts(text, ocr_text)
-                        merged_differs = _normalize_text_for_compare(merged) != _normalize_text_for_compare(text)
-                        if merged_differs and (
-                            not original_ok or ocr_ok or has_raster_content or _text_quality_score(ocr_text) >= (_text_quality_score(text) * 0.65)
-                        ):
-                            text = merged
+                # If page text is missing, too short, or looks like garbage → try OCR
+                should_try_ocr = HAS_OCR and (not original_ok or (has_raster_content and len((native_text or "").strip()) < 250))
+                if should_try_ocr:
+                    ocr_text = _ocr_pdf_page(file_path, page_num)
+                    ocr_ok = _text_quality_ok(ocr_text or "")
+                    ocr_used = False
+                    if ocr_text:
+                        if not text:
+                            text = ocr_text
                             ocr_used = True
-                if ocr_used:
-                    ocr_pages += 1
-                    print(f"      🔍 Page {page_num + 1}: OCR merged into indexed text")
-                elif ocr_text and len(ocr_text.strip()) > len((native_text or "").strip()):
-                    text = ocr_text
-                    ocr_pages += 1
-                    print(f"      🔍 Page {page_num + 1}: OCR used (longer than native extraction)")
+                        else:
+                            merged = _merge_distinct_texts(text, ocr_text)
+                            merged_differs = _normalize_text_for_compare(merged) != _normalize_text_for_compare(text)
+                            if merged_differs and (
+                                not original_ok or ocr_ok or has_raster_content or _text_quality_score(ocr_text) >= (_text_quality_score(text) * 0.65)
+                            ):
+                                text = merged
+                                ocr_used = True
+                    if ocr_used:
+                        ocr_pages += 1
+                        print(f"      🔍 Page {page_num + 1}: OCR merged into indexed text")
+                    elif ocr_text and len(ocr_text.strip()) > len((native_text or "").strip()):
+                        text = ocr_text
+                        ocr_pages += 1
+                        print(f"      🔍 Page {page_num + 1}: OCR used (longer than native extraction)")
+                    else:
+                        print(f"      ⚠️ Page {page_num + 1}: OCR attempted but no improvement")
+                elif not original_ok and not HAS_OCR:
+                    print(f"      ⚠️ Page {page_num + 1}: poor text quality but OCR not available")
+
+                text = _merge_distinct_texts(text, link_text)
+
+                # Always include the page, even with minimal text, to avoid losing content
+                final_text = (text or "").strip()
+                if final_text:
+                    metadata = {
+                        "file_path": str(Path(file_path).resolve()),
+                        "file_name": Path(file_path).name,
+                        "page_label": str(page_num + 1),
+                        "page": str(page_num + 1),
+                        "file_type": "application/pdf",
+                    }
+                    documents.append(Document(text=final_text, metadata=metadata))
+                    indexed_pages += 1
                 else:
-                    print(f"      ⚠️ Page {page_num + 1}: OCR attempted but no improvement")
-            elif not original_ok and not HAS_OCR:
-                print(f"      ⚠️ Page {page_num + 1}: poor text quality but OCR not available")
+                    print(f"      ❌ Page {page_num + 1}: no text extracted (empty after all attempts)")
+            except Exception as page_error:
+                print(f"      ❌ Page {page_num + 1}: PyMuPDF page error: {page_error}")
+                if HAS_OCR:
+                    fallback_text = (_ocr_pdf_page(file_path, page_num) or "").strip()
+                    if fallback_text:
+                        metadata = {
+                            "file_path": str(Path(file_path).resolve()),
+                            "file_name": Path(file_path).name,
+                            "page_label": str(page_num + 1),
+                            "page": str(page_num + 1),
+                            "file_type": "application/pdf",
+                        }
+                        documents.append(Document(text=fallback_text, metadata=metadata))
+                        indexed_pages += 1
+                        ocr_pages += 1
+                        print(f"      🔍 Page {page_num + 1}: indexed via OCR fallback after page error")
+                    else:
+                        print(f"      ❌ Page {page_num + 1}: OCR fallback also returned empty text")
 
-            text = _merge_distinct_texts(text, link_text)
-
-            # Always include the page, even with minimal text, to avoid losing content
-            final_text = (text or "").strip()
-            if final_text:
-                metadata = {
-                    "file_path": str(Path(file_path).resolve()),
-                    "file_name": Path(file_path).name,
-                    "page_label": str(page_num + 1),
-                    "page": str(page_num + 1),
-                    "file_type": "application/pdf",
-                }
-                documents.append(Document(text=final_text, metadata=metadata))
-                indexed_pages += 1
-            else:
-                print(f"      ❌ Page {page_num + 1}: no text extracted (empty after all attempts)")
-        doc.close()
-        print(f"    ✓ Indexed {indexed_pages}/{len(doc)} page(s) in {Path(file_path).name}")
+        print(f"    ✓ Indexed {indexed_pages}/{page_count} page(s) in {Path(file_path).name}")
         if ocr_pages > 0:
             print(f"    🔍 OCR applied on {ocr_pages} scanned page(s) in {Path(file_path).name}")
     except Exception as e:
         print(f"  ✗ PyMuPDF error on {file_path}: {e}")
+    finally:
+        if doc is not None:
+            try:
+                doc.close()
+            except Exception:
+                pass
     return documents
 
 
