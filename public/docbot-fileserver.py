@@ -3,7 +3,7 @@
 DocBot File Server - LlamaIndex-powered RAG companion for DocBot.
 
 Usage:
-    pip install llama-index llama-index-embeddings-huggingface flask flask-cors pymupdf pdfkit
+    pip install llama-index llama-index-embeddings-huggingface flask flask-cors pymupdf pdfkit easyocr
     apt install wkhtmltopdf  (on Debian/Ubuntu)
     python docbot-fileserver.py --folders /path/to/docs
 
@@ -111,15 +111,15 @@ except ImportError:
     print("Warning: pymupdf not installed. PDF text extraction may return binary data.")
     print("  pip install pymupdf")
 
-# OCR support for scanned PDFs
+# OCR support for scanned PDFs (EasyOCR - faster than pytesseract)
 HAS_OCR = False
+_easyocr_reader = None
 try:
-    import pytesseract
-    from pdf2image import convert_from_path
+    import easyocr
     HAS_OCR = True
 except ImportError:
-    print("Info: pytesseract/pdf2image not installed. Scanned PDFs will not be OCR-ized.")
-    print("  pip install pytesseract pdf2image && apt install tesseract-ocr poppler-utils")
+    print("Info: easyocr not installed. Scanned PDFs will not be OCR-ized.")
+    print("  pip install easyocr")
 
 try:
     from llama_index.core import (
@@ -138,15 +138,35 @@ except ImportError:
     print("  pip install llama-index llama-index-embeddings-huggingface")
 
 
+def _get_easyocr_reader():
+    """Lazy-initialize EasyOCR reader (loads model once, reuses across calls)."""
+    global _easyocr_reader
+    if _easyocr_reader is None:
+        print("🔄 Loading EasyOCR model (first use, may take a moment)...")
+        _easyocr_reader = easyocr.Reader(['ro', 'en'], gpu=True)
+        print("✅ EasyOCR model loaded.")
+    return _easyocr_reader
+
+
 def _ocr_pdf_page(file_path: str, page_num: int) -> str:
-    """OCR a single page from a PDF using pytesseract."""
+    """OCR a single page from a PDF using EasyOCR (via PyMuPDF rasterization)."""
     if not HAS_OCR:
         return ""
     try:
-        images = convert_from_path(file_path, first_page=page_num + 1, last_page=page_num + 1, dpi=300)
-        if images:
-            text = pytesseract.image_to_string(images[0], lang='ron+eng')
-            return text.strip()
+        doc = fitz.open(file_path)
+        try:
+            page = doc.load_page(page_num)
+            # Render page to image at 300 DPI
+            mat = fitz.Matrix(300 / 72, 300 / 72)
+            pix = page.get_pixmap(matrix=mat)
+            img_bytes = pix.tobytes("png")
+        finally:
+            doc.close()
+
+        reader = _get_easyocr_reader()
+        results = reader.readtext(img_bytes, detail=0, paragraph=True)
+        text = "\n".join(results)
+        return text.strip()
     except Exception as e:
         print(f"  ⚠ OCR error on {Path(file_path).name} page {page_num + 1}: {e}")
     return ""
