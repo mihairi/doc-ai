@@ -138,16 +138,40 @@ except ImportError:
     print("  pip install llama-index llama-index-embeddings-huggingface")
 
 
+def _ocr_pdf_page(file_path: str, page_num: int) -> str:
+    """OCR a single page from a PDF using pytesseract."""
+    if not HAS_OCR:
+        return ""
+    try:
+        images = convert_from_path(file_path, first_page=page_num + 1, last_page=page_num + 1, dpi=300)
+        if images:
+            text = pytesseract.image_to_string(images[0], lang='ron+eng')
+            return text.strip()
+    except Exception as e:
+        print(f"  ⚠ OCR error on {Path(file_path).name} page {page_num + 1}: {e}")
+    return ""
+
+
+# Minimum characters per page to consider it "has text" (not scanned)
+MIN_TEXT_CHARS_PER_PAGE = 30
+
 def _read_pdf_with_pymupdf(file_path: str) -> list:
-    """Extract text from PDF using PyMuPDF (fitz) - works reliably on Linux."""
+    """Extract text from PDF using PyMuPDF (fitz). Falls back to OCR for scanned pages."""
     if not HAS_PYMUPDF or not HAS_LLAMA:
         return []
     documents = []
+    ocr_pages = 0
     try:
         doc = fitz.open(file_path)
         for page_num in range(len(doc)):
             page = doc[page_num]
             text = page.get_text("text")
+            # If page has very little text, try OCR
+            if (not text or len(text.strip()) < MIN_TEXT_CHARS_PER_PAGE) and HAS_OCR:
+                ocr_text = _ocr_pdf_page(file_path, page_num)
+                if ocr_text and len(ocr_text.strip()) > len((text or "").strip()):
+                    text = ocr_text
+                    ocr_pages += 1
             if text and text.strip():
                 metadata = {
                     "file_path": str(Path(file_path).resolve()),
@@ -157,6 +181,8 @@ def _read_pdf_with_pymupdf(file_path: str) -> list:
                 }
                 documents.append(Document(text=text, metadata=metadata))
         doc.close()
+        if ocr_pages > 0:
+            print(f"    🔍 OCR applied on {ocr_pages} scanned page(s) in {Path(file_path).name}")
     except Exception as e:
         print(f"  ✗ PyMuPDF error on {file_path}: {e}")
     return documents
