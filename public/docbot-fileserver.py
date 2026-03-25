@@ -138,15 +138,35 @@ except ImportError:
     print("  pip install llama-index llama-index-embeddings-huggingface")
 
 
+def _get_easyocr_reader():
+    """Lazy-initialize EasyOCR reader (loads model once, reuses across calls)."""
+    global _easyocr_reader
+    if _easyocr_reader is None:
+        print("🔄 Loading EasyOCR model (first use, may take a moment)...")
+        _easyocr_reader = easyocr.Reader(['ro', 'en'], gpu=True)
+        print("✅ EasyOCR model loaded.")
+    return _easyocr_reader
+
+
 def _ocr_pdf_page(file_path: str, page_num: int) -> str:
-    """OCR a single page from a PDF using pytesseract."""
+    """OCR a single page from a PDF using EasyOCR (via PyMuPDF rasterization)."""
     if not HAS_OCR:
         return ""
     try:
-        images = convert_from_path(file_path, first_page=page_num + 1, last_page=page_num + 1, dpi=300)
-        if images:
-            text = pytesseract.image_to_string(images[0], lang='ron+eng')
-            return text.strip()
+        doc = fitz.open(file_path)
+        try:
+            page = doc.load_page(page_num)
+            # Render page to image at 300 DPI
+            mat = fitz.Matrix(300 / 72, 300 / 72)
+            pix = page.get_pixmap(matrix=mat)
+            img_bytes = pix.tobytes("png")
+        finally:
+            doc.close()
+
+        reader = _get_easyocr_reader()
+        results = reader.readtext(img_bytes, detail=0, paragraph=True)
+        text = "\n".join(results)
+        return text.strip()
     except Exception as e:
         print(f"  ⚠ OCR error on {Path(file_path).name} page {page_num + 1}: {e}")
     return ""
