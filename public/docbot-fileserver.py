@@ -154,6 +154,16 @@ def _ocr_pdf_page(file_path: str, page_num: int) -> str:
 
 # Minimum characters per page to consider it "has text" (not scanned)
 MIN_TEXT_CHARS_PER_PAGE = 30
+MIN_ALPHA_RATIO = 0.40  # at least 40% of chars should be letters/digits
+
+def _text_quality_ok(text: str) -> bool:
+    """Check if extracted text looks like real readable content (not garbage encoding artifacts)."""
+    stripped = text.strip()
+    if len(stripped) < MIN_TEXT_CHARS_PER_PAGE:
+        return False
+    alnum = sum(1 for c in stripped if c.isalnum() or c.isspace())
+    ratio = alnum / len(stripped) if stripped else 0
+    return ratio >= MIN_ALPHA_RATIO
 
 def _read_pdf_with_pymupdf(file_path: str) -> list:
     """Extract text from PDF using PyMuPDF (fitz). Falls back to OCR for scanned pages."""
@@ -166,12 +176,16 @@ def _read_pdf_with_pymupdf(file_path: str) -> list:
         for page_num in range(len(doc)):
             page = doc[page_num]
             text = page.get_text("text")
-            # If page has very little text, try OCR
-            if (not text or len(text.strip()) < MIN_TEXT_CHARS_PER_PAGE) and HAS_OCR:
+            # If page text is missing, too short, or looks like garbage → try OCR
+            needs_ocr = not _text_quality_ok(text or "")
+            if needs_ocr and HAS_OCR:
                 ocr_text = _ocr_pdf_page(file_path, page_num)
                 if ocr_text and len(ocr_text.strip()) > len((text or "").strip()):
                     text = ocr_text
                     ocr_pages += 1
+                    print(f"      🔍 Page {page_num + 1}: OCR used (original text quality poor)")
+                else:
+                    print(f"      ⚠️ Page {page_num + 1}: OCR attempted but no improvement")
             if text and text.strip():
                 metadata = {
                     "file_path": str(Path(file_path).resolve()),
