@@ -175,25 +175,40 @@ def _read_pdf_with_pymupdf(file_path: str) -> list:
         doc = fitz.open(file_path)
         for page_num in range(len(doc)):
             page = doc[page_num]
-            text = page.get_text("text")
+            raw_text = page.get_text("text")
+            text = raw_text
+            original_ok = _text_quality_ok(raw_text or "")
+
             # If page text is missing, too short, or looks like garbage → try OCR
-            needs_ocr = not _text_quality_ok(text or "")
-            if needs_ocr and HAS_OCR:
+            if not original_ok and HAS_OCR:
                 ocr_text = _ocr_pdf_page(file_path, page_num)
-                if ocr_text and len(ocr_text.strip()) > len((text or "").strip()):
+                ocr_ok = _text_quality_ok(ocr_text or "")
+                if ocr_ok:
                     text = ocr_text
                     ocr_pages += 1
                     print(f"      🔍 Page {page_num + 1}: OCR used (original text quality poor)")
+                elif ocr_text and len(ocr_text.strip()) > len((raw_text or "").strip()):
+                    # OCR text is longer even if not great quality — use it anyway
+                    text = ocr_text
+                    ocr_pages += 1
+                    print(f"      🔍 Page {page_num + 1}: OCR used (longer than original, quality marginal)")
                 else:
                     print(f"      ⚠️ Page {page_num + 1}: OCR attempted but no improvement")
-            if text and text.strip():
+            elif not original_ok and not HAS_OCR:
+                print(f"      ⚠️ Page {page_num + 1}: poor text quality but OCR not available")
+
+            # Always include the page, even with minimal text, to avoid losing content
+            final_text = (text or "").strip()
+            if final_text:
                 metadata = {
                     "file_path": str(Path(file_path).resolve()),
                     "file_name": Path(file_path).name,
                     "page_label": str(page_num + 1),
                     "file_type": "application/pdf",
                 }
-                documents.append(Document(text=text, metadata=metadata))
+                documents.append(Document(text=final_text, metadata=metadata))
+            else:
+                print(f"      ❌ Page {page_num + 1}: no text extracted (empty after all attempts)")
         doc.close()
         if ocr_pages > 0:
             print(f"    🔍 OCR applied on {ocr_pages} scanned page(s) in {Path(file_path).name}")
