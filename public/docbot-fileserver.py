@@ -111,15 +111,15 @@ except ImportError:
     print("Warning: pymupdf not installed. PDF text extraction may return binary data.")
     print("  pip install pymupdf")
 
-# OCR support for scanned PDFs
+# OCR support for scanned PDFs (EasyOCR - faster than pytesseract)
 HAS_OCR = False
+_easyocr_reader = None
 try:
-    import pytesseract
-    from pdf2image import convert_from_path
+    import easyocr
     HAS_OCR = True
 except ImportError:
-    print("Info: pytesseract/pdf2image not installed. Scanned PDFs will not be OCR-ized.")
-    print("  pip install pytesseract pdf2image && apt install tesseract-ocr poppler-utils")
+    print("Info: easyocr not installed. Scanned PDFs will not be OCR-ized.")
+    print("  pip install easyocr")
 
 try:
     from llama_index.core import (
