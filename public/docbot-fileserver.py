@@ -1002,7 +1002,7 @@ def feedback_clear():
 
 
 def main():
-    global _folders, _index
+    global _folders, _index, _doc_count
 
     parser = argparse.ArgumentParser(description="DocBot File Server (LlamaIndex)")
     parser.add_argument("--port", type=int, default=5123, help="Port (default: 5123)")
@@ -1020,16 +1020,17 @@ def main():
         p = Path(f).resolve()
         print(f"  {'✓' if p.is_dir() else '✗'} Folder: {p}")
 
-    # Try loading persisted index
+    # Try loading persisted index + manifest
     if HAS_LLAMA and Path(_persist_dir).exists():
         try:
             print("[DocBot] Loading persisted index...")
-            #Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-m3")
             Settings.embed_model = custom_embed_model              
             Settings.llm = None
             storage_context = StorageContext.from_defaults(persist_dir=_persist_dir)
             _index = load_index_from_storage(storage_context)
-            print("[DocBot] Persisted index loaded.")
+            manifest = _load_manifest()
+            _doc_count = len(manifest) if manifest else 0
+            print(f"[DocBot] Persisted index loaded ({_doc_count} files in manifest).")
         except Exception as e:
             print(f"[DocBot] Could not load persisted index: {e}")
 
