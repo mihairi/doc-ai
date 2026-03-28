@@ -173,8 +173,8 @@ def _ocr_pdf_page(file_path: str, page_num: int) -> str:
 
 
 # Minimum characters per page to consider it "has text" (not scanned)
-MIN_TEXT_CHARS_PER_PAGE = 30
-MIN_ALPHA_RATIO = 0.40  # at least 40% of chars should be letters/digits
+MIN_TEXT_CHARS_PER_PAGE = 60
+MIN_ALPHA_RATIO = 0.80  # at least 40% of chars should be letters/digits
 
 def _text_quality_ok(text: str) -> bool:
     """Check if extracted text looks like real readable content (not garbage encoding artifacts)."""
