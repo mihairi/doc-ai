@@ -28,6 +28,14 @@ from pathlib import Path
 
 _password_file = ".docbot-password"
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+FORCE_OCR_ALL_PAGES = _env_flag("DOCBOT_FORCE_OCR_ALL_PAGES", False)
+
 def _read_password() -> str:
     p = Path(_password_file)
     if p.exists():
@@ -394,7 +402,8 @@ def _read_pdf_with_pymupdf(file_path: str) -> list:
 
                 # If page text is missing, too short, or looks like garbage → try OCR
                 should_try_ocr = HAS_OCR and (
-                    not original_ok
+                    FORCE_OCR_ALL_PAGES
+                    or not original_ok
                     or (has_raster_content and native_sparse)
                     or (native_sparse and native_score < 280)
                 )
@@ -872,6 +881,7 @@ def health():
         "status": "ok",
         "engine": "llamaindex" if HAS_LLAMA else "none",
         "folders": len(_folders),
+        "force_ocr_all_pages": FORCE_OCR_ALL_PAGES,
     })
 
 
@@ -886,6 +896,7 @@ def status():
         "error": _index_error,
         "folders": resolved,
         "progress": _index_progress,
+        "force_ocr_all_pages": FORCE_OCR_ALL_PAGES,
     })
 
 
@@ -1094,15 +1105,18 @@ def feedback_clear():
 
 
 def main():
-    global _folders, _index, _doc_count
+    global _folders, _index, _doc_count, FORCE_OCR_ALL_PAGES
 
     parser = argparse.ArgumentParser(description="DocBot File Server (LlamaIndex)")
     parser.add_argument("--port", type=int, default=5123, help="Port (default: 5123)")
     parser.add_argument("--host", type=str, default="10.200.20.1", help="Bind address (default: 10.200.20.1)")
     parser.add_argument("--folders", type=str, required=True,
                         help="Comma-separated folder paths")
+    parser.add_argument("--force-ocr-all-pages", action="store_true",
+                        help="Force OCR on every PDF page, even when native text exists")
     args = parser.parse_args()
 
+    FORCE_OCR_ALL_PAGES = args.force_ocr_all_pages or FORCE_OCR_ALL_PAGES
     _folders = [f.strip() for f in args.folders.split(",") if f.strip()]
     if not _folders:
         print("Error: No folders specified")
@@ -1111,6 +1125,8 @@ def main():
     for f in _folders:
         p = Path(f).resolve()
         print(f"  {'✓' if p.is_dir() else '✗'} Folder: {p}")
+
+    print(f"[DocBot] Force OCR all pages: {'ON' if FORCE_OCR_ALL_PAGES else 'OFF'}")
 
     # Try loading persisted index + manifest
     if HAS_LLAMA and Path(_persist_dir).exists():
