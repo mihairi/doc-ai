@@ -610,6 +610,33 @@ def _collect_folder_files(folder: str) -> dict:
     return files
 
 
+def _load_single_file(file_path: str, folder_path: str) -> list:
+    """Load a single file and return Document objects, using the same logic as _load_folder_documents."""
+    fp = Path(file_path)
+    suffix = fp.suffix.lower()
+
+    # HTML → convert to PDF first, then process the PDF
+    if suffix in ('.html', '.htm'):
+        pdf_path = _convert_html_to_pdf(str(fp))
+        if pdf_path and HAS_PYMUPDF:
+            return _read_pdf_with_pymupdf(pdf_path)
+        return []
+
+    # PDF → use PyMuPDF
+    if suffix == '.pdf' and HAS_PYMUPDF:
+        return _read_pdf_with_pymupdf(str(fp))
+
+    # Other files → use SimpleDirectoryReader on the single file
+    if HAS_LLAMA:
+        try:
+            from llama_index.core import SimpleDirectoryReader
+            reader = SimpleDirectoryReader(input_files=[str(fp)])
+            return reader.load_data()
+        except Exception as e:
+            print(f"  ✗ Error reading {fp.name}: {e}")
+    return []
+
+
 def _do_index():
     global _index, _indexing, _last_indexed, _doc_count, _index_error, _index_progress
     try:
