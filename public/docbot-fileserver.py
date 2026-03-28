@@ -677,6 +677,10 @@ def _do_index(force_full_rebuild: bool = False):
         Settings.embed_model = custom_embed_model
         Settings.llm = None
 
+        # Pre-load EasyOCR model BEFORE processing any files
+        if HAS_OCR:
+            _get_easyocr_reader()
+
         # Collect current files and compare with manifest
         old_manifest = _load_manifest()
         current_files = {}
