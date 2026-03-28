@@ -577,53 +577,197 @@ _last_indexed = None
 _doc_count = 0
 _index_error = None
 _persist_dir = ".docbot-index"
+_manifest_file = ".docbot-manifest.json"
 _index_progress = {"phase": "", "current": 0, "total": 0}
 
 
-def _do_index():
+def _load_manifest() -> dict:
+    """Load the file manifest {file_path: mtime} from disk."""
+    try:
+        if Path(_manifest_file).exists():
+            return json.loads(Path(_manifest_file).read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"[DocBot] Could not load manifest: {e}")
+    return {}
+
+
+def _save_manifest(manifest: dict):
+    """Save the file manifest to disk."""
+    Path(_manifest_file).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+
+def _collect_folder_files(folder: str) -> dict:
+    """Collect all indexable files in a folder with their mtimes."""
+    SKIP_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp',
+                       '.mp4', '.avi', '.mov', '.mkv', '.wmv', '.mp3', '.wav', '.flac'}
+    files = {}
+    p = Path(folder).resolve()
+    if not p.is_dir():
+        return files
+    for f in p.rglob("*"):
+        if f.is_file() and f.suffix.lower() not in SKIP_EXTENSIONS:
+            files[str(f)] = f.stat().st_mtime
+    return files
+
+
+def _load_single_file(file_path: str, folder_path: str) -> list:
+    """Load a single file and return Document objects, using the same logic as _load_folder_documents."""
+    fp = Path(file_path)
+    suffix = fp.suffix.lower()
+
+    # HTML → convert to PDF first, then process the PDF
+    if suffix in ('.html', '.htm'):
+        pdf_path = _convert_html_to_pdf(str(fp))
+        if pdf_path and HAS_PYMUPDF:
+            return _read_pdf_with_pymupdf(pdf_path)
+        return []
+
+    # PDF → use PyMuPDF
+    if suffix == '.pdf' and HAS_PYMUPDF:
+        return _read_pdf_with_pymupdf(str(fp))
+
+    # Other files → use SimpleDirectoryReader on the single file
+    if HAS_LLAMA:
+        try:
+            from llama_index.core import SimpleDirectoryReader
+            reader = SimpleDirectoryReader(input_files=[str(fp)])
+            return reader.load_data()
+        except Exception as e:
+            print(f"  ✗ Error reading {fp.name}: {e}")
+    return []
+
+
+def _do_index(force_full_rebuild: bool = False):
     global _index, _indexing, _last_indexed, _doc_count, _index_error, _index_progress
     try:
         _index_error = None
         _index_progress = {"phase": "loading_model", "current": 0, "total": 0}
         print(f"[DocBot] Indexing {len(_folders)} folder(s)...")
 
-        #Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-m3")
         Settings.embed_model = custom_embed_model
         Settings.llm = None
 
-        _index_progress = {"phase": "reading_files", "current": 0, "total": len(_folders)}
-        documents = []
-        for i, folder in enumerate(_folders):
-            p = Path(folder).resolve()
-            _index_progress = {"phase": "reading_files", "current": i + 1, "total": len(_folders)}
-            if not p.is_dir():
-                print(f"  ✗ Skipping non-existent folder: {p}")
-                continue
-            print(f"  ✓ Reading: {p}")
-            folder_docs = _load_folder_documents(str(p))
-            documents.extend(folder_docs)
-            print(f"    → {len(folder_docs)} document chunks loaded")
+        # Collect current files and compare with manifest
+        old_manifest = _load_manifest()
+        current_files = {}
+        for folder in _folders:
+            current_files.update(_collect_folder_files(folder))
 
-        if not documents:
+        new_files = []
+        changed_files = []
+        deleted_files = []
+
+        for fpath, mtime in current_files.items():
+            if fpath not in old_manifest:
+                new_files.append(fpath)
+            elif abs(mtime - old_manifest[fpath]) > 1.0:
+                changed_files.append(fpath)
+
+        for fpath in old_manifest:
+            if fpath not in current_files:
+                deleted_files.append(fpath)
+
+        files_to_process = new_files + changed_files
+        has_existing_index = _index is not None
+
+        print(f"[DocBot] Files: {len(current_files)} total, {len(new_files)} new, "
+              f"{len(changed_files)} changed, {len(deleted_files)} deleted")
+
+        # If no changes and index exists, skip (unless forced)
+        if not files_to_process and not deleted_files and has_existing_index and not force_full_rebuild:
+            _index_progress = {"phase": "done", "current": 0, "total": 0}
+            _last_indexed = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            print(f"[DocBot] No changes detected. Index is up to date ({_doc_count} docs).")
+            _indexing = False
+            return
+
+        # If no existing index, files deleted, or forced → full rebuild
+        force_full = force_full_rebuild or not has_existing_index or len(deleted_files) > 0
+        if force_full and not files_to_process and not current_files:
             _index_error = "No documents found in configured folders"
             _index_progress = {"phase": "error", "current": 0, "total": 0}
             print(f"[DocBot] {_index_error}")
             _indexing = False
             return
 
-        _index_progress = {"phase": "building_index", "current": 0, "total": len(documents)}
-        print(f"[DocBot] Building index from {len(documents)} document(s)...")
-        with _index_lock:
-            _index = VectorStoreIndex.from_documents(
-                documents,
-                show_progress=True,
-            )
-            _index.storage_context.persist(persist_dir=_persist_dir)
-            _doc_count = len(documents)
+        if force_full:
+            # Full rebuild
+            print(f"[DocBot] Performing full index rebuild...")
+            _index_progress = {"phase": "reading_files", "current": 0, "total": len(_folders)}
+            documents = []
+            for i, folder in enumerate(_folders):
+                p = Path(folder).resolve()
+                _index_progress = {"phase": "reading_files", "current": i + 1, "total": len(_folders)}
+                if not p.is_dir():
+                    print(f"  ✗ Skipping non-existent folder: {p}")
+                    continue
+                print(f"  ✓ Reading: {p}")
+                folder_docs = _load_folder_documents(str(p))
+                documents.extend(folder_docs)
+                print(f"    → {len(folder_docs)} document chunks loaded")
 
-        _index_progress = {"phase": "done", "current": len(documents), "total": len(documents)}
+            if not documents:
+                _index_error = "No documents found in configured folders"
+                _index_progress = {"phase": "error", "current": 0, "total": 0}
+                print(f"[DocBot] {_index_error}")
+                _indexing = False
+                return
+
+            _index_progress = {"phase": "building_index", "current": 0, "total": len(documents)}
+            print(f"[DocBot] Building index from {len(documents)} document(s)...")
+            with _index_lock:
+                _index = VectorStoreIndex.from_documents(documents, show_progress=True)
+                _index.storage_context.persist(persist_dir=_persist_dir)
+                _doc_count = len(documents)
+        else:
+            # Incremental update — only process new/changed files
+            print(f"[DocBot] Incremental update: {len(files_to_process)} file(s) to process...")
+            _index_progress = {"phase": "reading_files", "current": 0, "total": len(files_to_process)}
+            documents = []
+
+            for i, fpath in enumerate(files_to_process):
+                _index_progress = {"phase": "reading_files", "current": i + 1, "total": len(files_to_process)}
+                folder = None
+                for f in _folders:
+                    fp = Path(f).resolve()
+                    try:
+                        if os.path.commonpath([str(fp), fpath]) == str(fp):
+                            folder = str(fp)
+                            break
+                    except ValueError:
+                        continue
+                if not folder:
+                    continue
+
+                print(f"  ✓ Processing: {Path(fpath).name}")
+                try:
+                    # Load individual file using the existing folder loader
+                    # We temporarily move the file to process it
+                    file_docs = _load_single_file(fpath, folder)
+                    documents.extend(file_docs)
+                    print(f"    → {len(file_docs)} chunks from {Path(fpath).name}")
+                except Exception as e:
+                    print(f"    ✗ Error processing {Path(fpath).name}: {e}")
+
+            if documents:
+                _index_progress = {"phase": "building_index", "current": 0, "total": len(documents)}
+                print(f"[DocBot] Inserting {len(documents)} new document(s) into index...")
+                with _index_lock:
+                    for doc in documents:
+                        _index.insert(doc)
+                    _index.storage_context.persist(persist_dir=_persist_dir)
+                    _doc_count += len(documents)
+
+        # Save updated manifest
+        new_manifest = {fpath: mtime for fpath, mtime in current_files.items()}
+        _save_manifest(new_manifest)
+
+        _index_progress = {"phase": "done", "current": len(files_to_process) if not force_full else _doc_count, "total": len(files_to_process) if not force_full else _doc_count}
         _last_indexed = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        print(f"[DocBot] Indexing complete. {_doc_count} documents indexed.")
+        if force_full:
+            print(f"[DocBot] Full indexing complete. {_doc_count} documents indexed.")
+        else:
+            print(f"[DocBot] Incremental update complete. {len(documents)} new docs added. Total: {_doc_count}")
 
     except Exception as e:
         _index_error = str(e)
@@ -674,10 +818,13 @@ def index():
     if _indexing:
         return jsonify({"status": "already_indexing"}), 409
 
+    data = request.get_json(silent=True) or {}
+    force_full = data.get("force_full", False)
+
     _indexing = True
-    thread = threading.Thread(target=_do_index, daemon=True)
+    thread = threading.Thread(target=_do_index, args=(force_full,), daemon=True)
     thread.start()
-    return jsonify({"status": "indexing_started"})
+    return jsonify({"status": "indexing_started", "mode": "full" if force_full else "incremental"})
 
 
 @app.route("/api/file", methods=["GET"])
@@ -858,7 +1005,7 @@ def feedback_clear():
 
 
 def main():
-    global _folders, _index
+    global _folders, _index, _doc_count
 
     parser = argparse.ArgumentParser(description="DocBot File Server (LlamaIndex)")
     parser.add_argument("--port", type=int, default=5123, help="Port (default: 5123)")
@@ -876,16 +1023,17 @@ def main():
         p = Path(f).resolve()
         print(f"  {'✓' if p.is_dir() else '✗'} Folder: {p}")
 
-    # Try loading persisted index
+    # Try loading persisted index + manifest
     if HAS_LLAMA and Path(_persist_dir).exists():
         try:
             print("[DocBot] Loading persisted index...")
-            #Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-m3")
             Settings.embed_model = custom_embed_model              
             Settings.llm = None
             storage_context = StorageContext.from_defaults(persist_dir=_persist_dir)
             _index = load_index_from_storage(storage_context)
-            print("[DocBot] Persisted index loaded.")
+            manifest = _load_manifest()
+            _doc_count = len(manifest) if manifest else 0
+            print(f"[DocBot] Persisted index loaded ({_doc_count} files in manifest).")
         except Exception as e:
             print(f"[DocBot] Could not load persisted index: {e}")
 

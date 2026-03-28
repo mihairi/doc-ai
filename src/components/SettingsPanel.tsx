@@ -143,9 +143,9 @@ export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigCh
     return `${m}m ${s}s`;
   };
 
-  const handleTriggerIndex = async () => {
+  const handleTriggerIndex = async (forceFull = false) => {
     try {
-      const result = await triggerIndexing(fsConfig.url);
+      const result = await triggerIndexing(fsConfig.url, forceFull);
       if (result === 'already_indexing') {
         toast({ title: 'Indexarea este deja în curs...' });
       } else {
@@ -153,7 +153,7 @@ export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigCh
         setIndexStartTime(Date.now());
         setIndexElapsed(0);
         setLastIndexDuration(null);
-        toast({ title: 'Indexare pornită', description: 'Se procesează documentele...' });
+        toast({ title: forceFull ? 'Re-indexare completă pornită' : 'Indexare incrementală pornită', description: 'Se procesează documentele...' });
       }
     } catch (err: any) {
       toast({ title: 'Eroare', description: err?.message, variant: 'destructive' });
@@ -305,20 +305,33 @@ export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigCh
                 {/* Index status & trigger */}
                 {fsConnected && (
                   <div className="space-y-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="w-full justify-start gap-2"
-                      onClick={handleTriggerIndex}
-                      disabled={indexing || (indexStatus?.indexing ?? false)}
-                    >
-                      {indexing || indexStatus?.indexing ? (
-                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Zap className="h-3.5 w-3.5" />
-                      )}
-                      {indexing || indexStatus?.indexing ? 'Se indexează...' : 'Re-indexare documente'}
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="flex-1 justify-start gap-2"
+                        onClick={() => handleTriggerIndex(false)}
+                        disabled={indexing || (indexStatus?.indexing ?? false)}
+                      >
+                        {indexing || indexStatus?.indexing ? (
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Zap className="h-3.5 w-3.5" />
+                        )}
+                        {indexing || indexStatus?.indexing ? 'Se indexează...' : 'Indexare'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1 text-xs"
+                        onClick={() => handleTriggerIndex(true)}
+                        disabled={indexing || (indexStatus?.indexing ?? false)}
+                        title="Re-indexare completă (toate documentele)"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        Full
+                      </Button>
+                    </div>
 
                     {/* Progress indicator */}
                     {(indexing || indexStatus?.indexing) && indexStatus?.progress && indexStatus.progress.phase && (
