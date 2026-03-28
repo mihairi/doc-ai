@@ -637,7 +637,7 @@ def _load_single_file(file_path: str, folder_path: str) -> list:
     return []
 
 
-def _do_index():
+def _do_index(force_full_rebuild: bool = False):
     global _index, _indexing, _last_indexed, _doc_count, _index_error, _index_progress
     try:
         _index_error = None
