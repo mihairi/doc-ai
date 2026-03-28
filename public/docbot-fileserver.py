@@ -673,16 +673,16 @@ def _do_index(force_full_rebuild: bool = False):
         print(f"[DocBot] Files: {len(current_files)} total, {len(new_files)} new, "
               f"{len(changed_files)} changed, {len(deleted_files)} deleted")
 
-        # If no changes and index exists, skip
-        if not files_to_process and not deleted_files and has_existing_index:
+        # If no changes and index exists, skip (unless forced)
+        if not files_to_process and not deleted_files and has_existing_index and not force_full_rebuild:
             _index_progress = {"phase": "done", "current": 0, "total": 0}
             _last_indexed = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             print(f"[DocBot] No changes detected. Index is up to date ({_doc_count} docs).")
             _indexing = False
             return
 
-        # If no existing index or too many changes, do full rebuild
-        force_full = not has_existing_index or len(deleted_files) > 0
+        # If no existing index, files deleted, or forced → full rebuild
+        force_full = force_full_rebuild or not has_existing_index or len(deleted_files) > 0
         if force_full and not files_to_process and not current_files:
             _index_error = "No documents found in configured folders"
             _index_progress = {"phase": "error", "current": 0, "total": 0}
