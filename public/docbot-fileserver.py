@@ -213,7 +213,7 @@ def _page_has_sparse_text(text: str) -> bool:
     if not compact:
         return True
     words = re.findall(r"\w+", compact, re.UNICODE)
-    return len(compact) < 500 or len(words) < 80
+    return len(compact) < 800 or len(words) < 100
 
 def _text_quality_score(text: str) -> float:
     stripped = (text or "").strip()
