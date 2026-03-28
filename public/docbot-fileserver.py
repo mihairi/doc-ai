@@ -148,6 +148,33 @@ def _get_easyocr_reader():
     return _easyocr_reader
 
 
+def _ocr_pixmap_bytes(img_bytes: bytes, source_name: str, page_num: int) -> str:
+    """Run EasyOCR on rasterized page bytes."""
+    if not HAS_OCR:
+        return ""
+    try:
+        reader = _get_easyocr_reader()
+        results = reader.readtext(img_bytes, detail=0, paragraph=True)
+        text = "\n".join(results)
+        return text.strip()
+    except Exception as e:
+        print(f"  ⚠ OCR error on {source_name} page {page_num + 1}: {e}")
+        return ""
+
+
+def _ocr_loaded_page(page, source_name: str, page_num: int) -> str:
+    """OCR an already opened PyMuPDF page to avoid page/document lifecycle issues."""
+    if not HAS_OCR:
+        return ""
+    try:
+        mat = fitz.Matrix(300 / 72, 300 / 72)
+        pix = page.get_pixmap(matrix=mat)
+        return _ocr_pixmap_bytes(pix.tobytes("png"), source_name, page_num)
+    except Exception as e:
+        print(f"  ⚠ OCR rasterization error on {source_name} page {page_num + 1}: {e}")
+        return ""
+
+
 def _ocr_pdf_page(file_path: str, page_num: int) -> str:
     """OCR a single page from a PDF using EasyOCR (via PyMuPDF rasterization)."""
     if not HAS_OCR:
@@ -156,17 +183,9 @@ def _ocr_pdf_page(file_path: str, page_num: int) -> str:
         doc = fitz.open(file_path)
         try:
             page = doc.load_page(page_num)
-            # Render page to image at 300 DPI
-            mat = fitz.Matrix(300 / 72, 300 / 72)
-            pix = page.get_pixmap(matrix=mat)
-            img_bytes = pix.tobytes("png")
+            return _ocr_loaded_page(page, Path(file_path).name, page_num)
         finally:
             doc.close()
-
-        reader = _get_easyocr_reader()
-        results = reader.readtext(img_bytes, detail=0, paragraph=True)
-        text = "\n".join(results)
-        return text.strip()
     except Exception as e:
         print(f"  ⚠ OCR error on {Path(file_path).name} page {page_num + 1}: {e}")
     return ""
@@ -187,6 +206,14 @@ def _text_quality_ok(text: str) -> bool:
 
 def _normalize_text_for_compare(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "")).strip().lower()
+
+
+def _page_has_sparse_text(text: str) -> bool:
+    compact = re.sub(r"\s+", " ", (text or "")).strip()
+    if not compact:
+        return True
+    words = re.findall(r"\w+", compact, re.UNICODE)
+    return len(compact) < 500 or len(words) < 80
 
 def _text_quality_score(text: str) -> float:
     stripped = (text or "").strip()
@@ -312,9 +339,12 @@ def _read_pdf_with_pymupdf(file_path: str) -> list:
                     has_raster_content = False
 
                 # If page text is missing, too short, or looks like garbage → try OCR
-                should_try_ocr = HAS_OCR and (not original_ok or (has_raster_content and len((native_text or "").strip()) < 250))
+                should_try_ocr = HAS_OCR and (
+                    not original_ok
+                    or (has_raster_content and _page_has_sparse_text(native_text))
+                )
                 if should_try_ocr:
-                    ocr_text = _ocr_pdf_page(file_path, page_num)
+                    ocr_text = _ocr_loaded_page(page, Path(file_path).name, page_num)
                     ocr_ok = _text_quality_ok(ocr_text or "")
                     ocr_used = False
                     if ocr_text:
