@@ -148,15 +148,54 @@ def _get_easyocr_reader():
     return _easyocr_reader
 
 
+def _ocr_text_score(text: str) -> float:
+    stripped = (text or "").strip()
+    if not stripped:
+        return 0.0
+    alnum = sum(1 for c in stripped if c.isalnum() or c.isspace())
+    alpha_ratio = (alnum / len(stripped)) if stripped else 0.0
+    words = re.findall(r"\w+", stripped, re.UNICODE)
+    line_count = len([line for line in stripped.splitlines() if line.strip()])
+    return (len(stripped) * max(alpha_ratio, 0.1)) + min(len(words), 120) * 2.0 + min(line_count, 20) * 8.0
+
+
 def _ocr_pixmap_bytes(img_bytes: bytes, source_name: str, page_num: int) -> str:
     """Run EasyOCR on rasterized page bytes."""
     if not HAS_OCR:
         return ""
     try:
         reader = _get_easyocr_reader()
-        results = reader.readtext(img_bytes, detail=0, paragraph=True)
-        text = "\n".join(results)
-        return text.strip()
+        attempts = [
+            ("standard", {"detail": 0, "paragraph": True}),
+            ("contrast", {"detail": 0, "paragraph": True, "contrast_ths": 0.05, "adjust_contrast": 0.7}),
+            ("rotation", {"detail": 0, "paragraph": True, "rotation_info": [90, 180, 270]}),
+            (
+                "contrast+rotation",
+                {
+                    "detail": 0,
+                    "paragraph": True,
+                    "contrast_ths": 0.05,
+                    "adjust_contrast": 0.7,
+                    "rotation_info": [90, 180, 270],
+                },
+            ),
+        ]
+        best_text = ""
+        best_mode = ""
+        for mode, kwargs in attempts:
+            try:
+                results = reader.readtext(img_bytes, **kwargs)
+                candidate = "\n".join(results).strip()
+                if _ocr_text_score(candidate) > _ocr_text_score(best_text):
+                    best_text = candidate
+                    best_mode = mode
+                if _text_quality_ok(candidate) and not _page_has_sparse_text(candidate):
+                    break
+            except Exception as attempt_error:
+                print(f"  ⚠ OCR attempt '{mode}' failed on {source_name} page {page_num + 1}: {attempt_error}")
+        if best_text and best_mode and best_mode != "standard":
+            print(f"      🔁 Page {page_num + 1}: OCR salvaged with {best_mode}")
+        return best_text
     except Exception as e:
         print(f"  ⚠ OCR error on {source_name} page {page_num + 1}: {e}")
         return ""
@@ -276,6 +315,23 @@ def _extract_page_links(page) -> str:
         deduped.append(f"Link: {link}")
     return "\n".join(deduped)
 
+
+def _page_has_raster_content(page) -> bool:
+    try:
+        if page.get_images(full=True):
+            return True
+    except Exception:
+        pass
+
+    try:
+        blocks = (page.get_text("dict") or {}).get("blocks", [])
+        if any(block.get("type") == 1 for block in blocks if isinstance(block, dict)):
+            return True
+    except Exception:
+        pass
+
+    return False
+
 def _extract_native_page_text(page) -> str:
     """Extract page text using multiple PyMuPDF strategies and merge distinct lines."""
     variants = []
@@ -332,16 +388,15 @@ def _read_pdf_with_pymupdf(file_path: str) -> list:
                 link_text = _extract_page_links(page)
                 text = native_text
                 original_ok = _text_quality_ok(native_text or "")
-                has_raster_content = False
-                try:
-                    has_raster_content = bool(page.get_images(full=True))
-                except Exception:
-                    has_raster_content = False
+                native_sparse = _page_has_sparse_text(native_text)
+                native_score = _text_quality_score(native_text)
+                has_raster_content = _page_has_raster_content(page)
 
                 # If page text is missing, too short, or looks like garbage → try OCR
                 should_try_ocr = HAS_OCR and (
                     not original_ok
-                    or (has_raster_content and _page_has_sparse_text(native_text))
+                    or (has_raster_content and native_sparse)
+                    or (native_sparse and native_score < 280)
                 )
                 if should_try_ocr:
                     ocr_text = _ocr_loaded_page(page, Path(file_path).name, page_num)
