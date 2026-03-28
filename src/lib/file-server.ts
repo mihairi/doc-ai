@@ -86,9 +86,14 @@ export async function fetchIndexStatus(url: string): Promise<IndexStatus> {
   }
 }
 
-export async function triggerIndexing(url: string): Promise<string> {
+export async function triggerIndexing(url: string, forceFull = false): Promise<string> {
   try {
-    const res = await fetch(`${baseUrl(url)}/api/index`, { method: 'POST', signal: AbortSignal.timeout(10000) });
+    const res = await fetch(`${baseUrl(url)}/api/index`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ force_full: forceFull }),
+      signal: AbortSignal.timeout(10000),
+    });
     const data = await res.json();
     if (!res.ok && res.status === 409) return 'already_indexing';
     if (!res.ok) throw new Error(data.error || `Server error: ${res.status}`);
