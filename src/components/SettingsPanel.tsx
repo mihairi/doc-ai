@@ -143,9 +143,9 @@ export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigCh
     return `${m}m ${s}s`;
   };
 
-  const handleTriggerIndex = async () => {
+  const handleTriggerIndex = async (forceFull = false) => {
     try {
-      const result = await triggerIndexing(fsConfig.url);
+      const result = await triggerIndexing(fsConfig.url, forceFull);
       if (result === 'already_indexing') {
         toast({ title: 'Indexarea este deja în curs...' });
       } else {
@@ -153,7 +153,7 @@ export function SettingsPanel({ config, onConfigChange, appConfig, onAppConfigCh
         setIndexStartTime(Date.now());
         setIndexElapsed(0);
         setLastIndexDuration(null);
-        toast({ title: 'Indexare pornită', description: 'Se procesează documentele...' });
+        toast({ title: forceFull ? 'Re-indexare completă pornită' : 'Indexare incrementală pornită', description: 'Se procesează documentele...' });
       }
     } catch (err: any) {
       toast({ title: 'Eroare', description: err?.message, variant: 'destructive' });
