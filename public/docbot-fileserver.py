@@ -818,10 +818,13 @@ def index():
     if _indexing:
         return jsonify({"status": "already_indexing"}), 409
 
+    data = request.get_json(silent=True) or {}
+    force_full = data.get("force_full", False)
+
     _indexing = True
-    thread = threading.Thread(target=_do_index, daemon=True)
+    thread = threading.Thread(target=_do_index, args=(force_full,), daemon=True)
     thread.start()
-    return jsonify({"status": "indexing_started"})
+    return jsonify({"status": "indexing_started", "mode": "full" if force_full else "incremental"})
 
 
 @app.route("/api/file", methods=["GET"])
